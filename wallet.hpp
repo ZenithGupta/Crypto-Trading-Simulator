@@ -3,20 +3,20 @@
 #include<string>
 #include<iostream>
 
-class Wallter {
+class Wallet {
     private: 
     double cashBalance;
     map<string,double> qty;
 
     public :
-     wallet();
+     Wallet();
      explicit Wallet(double initialCash);
 
      Wallet(const Wallet& other);
 
      double getCash() const;
      void setCash (double c);
-     void deposite(int amount);
+     void deposit(int amount);
 
      bool withdraw (double amount);
 

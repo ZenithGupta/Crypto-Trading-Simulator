@@ -9,7 +9,6 @@
 
 using namespace std;
 
-// ---- Simple admin auth wrapper -----------------
 class AdminGuard {
     static inline const string kUser = "admin";
     static inline const string kPass = "letmein";
@@ -41,11 +40,10 @@ double netWorth(const User& u, const Exchange& ex,
 }
 
 void seedExchange(Exchange& ex) {
-    ex.addListing(Crypto("Bitcoin",  "BTC", 60000.0));
-    ex.addListing(Crypto("Ether",    "ETH", 2500.0));
-    ex.addListing(Crypto("Solana",   "SOL", 150.0));
+    ex.add_crypto_listing(Crypto_currency("Bitcoin",  "BTC", 60000.0));
+    ex.add_crypto_listing(Crypto_currency("Ether",    "ETH", 2500.0));
+    ex.add_crypto_listing(Crypto_currency("Solana",   "SOL", 150.0));
     ex.updatePrice("ETH", 10.0, true);
-    ex.updatePrice("SOL", 120.00);
 }
 
 void printPortfolio(const User& u) {
@@ -141,7 +139,7 @@ int main() {
             if (!(cin >> inc)) { clearInput(); break; }
             if (ex.updatePrice(sym, pct, inc == 1)) {
                 auto px = ex.priceOf(sym);
-                cout << "[OK] " << sym << " is now $" << (px ? *px : 0.0) << "\n";
+                cout << "[OK] " << sym << " is now $" << (px ? px : 0.0) << "\n";
             } else {
                 cout << "[ERR] Symbol not found\n";
             }
