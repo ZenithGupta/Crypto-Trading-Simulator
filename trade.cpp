@@ -13,9 +13,8 @@ double Trade::getUnits() const { return units; }
 double Trade::getPriceAtOrder() const { return priceAtOrder; }
 
 bool BuyTrade::execute(User& user, Exchange& ex) {
-    auto priceOpt = ex.priceOf(symbol);
-    if (!priceOpt) { cout << "Symbol not found\n"; return false; }
-    double px = *priceOpt;
+    double px = ex.priceOf(symbol);
+    if (px < 0) { cout << "Symbol not found\n"; return false; }
     double cost = px * units;
     if (!user.getWallet().withdraw(cost)) {
         cout << "Insufficient cash to buy\n";
@@ -28,9 +27,8 @@ bool BuyTrade::execute(User& user, Exchange& ex) {
 }
 
 bool SellTrade::execute(User& user, Exchange& ex) {
-    auto priceOpt = ex.priceOf(symbol);
-    if (!priceOpt) { cout << "Symbol not found\n"; return false; }
-    double px = *priceOpt;
+    double px = ex.priceOf(symbol);
+    if (px < 0) { cout << "Symbol not found\n"; return false; }
     if (!user.getWallet().removeQty(symbol, units)) {
         cout << "Insufficient units to sell\n";
         return false;
