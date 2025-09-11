@@ -12,6 +12,7 @@ using namespace std;
 class AdminGuard {
     static const string kUser;
     static const string kPass;
+
 public:
     static bool loginInteractive() {
         string u, p;
@@ -28,11 +29,11 @@ public:
     }
 };
 
-// define static members outside the class
 const string AdminGuard::kUser = "admin";
 const string AdminGuard::kPass = "letmein";
 double netWorth(const User& u, const Exchange& ex,
     const vector<string>& symbols) {
+
     double worth = auditNetWorth(u);
     for (const auto& sym : symbols) {
         double units = u.getWallet().getQty(sym);
@@ -106,6 +107,7 @@ int main() {
                 user.getWallet().deposit((int)amt);
             }
             else {
+
                 user.getWallet().deposit(amt);
             }
             cout << "[OK] Deposited. New cash: " << user.getWallet().getCash() << "\n";
@@ -162,4 +164,5 @@ int main() {
 
     cout << "Done.\n";
     return 0;
+
 }

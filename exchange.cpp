@@ -12,9 +12,11 @@ void Exchange::add_crypto_listing(const Crypto_currency& c) {
 }
 
 Crypto_currency* Exchange::find(const std::string& symbol) {
+
     for (auto& c : listings) if (c.getSymbol() == symbol) return &c;
     return nullptr;
 }
+
 
 const Crypto_currency* Exchange::find(const std::string& symbol) const {
     for (auto& c : listings) {
@@ -26,6 +28,7 @@ const Crypto_currency* Exchange::find(const std::string& symbol) const {
 }
 
 bool Exchange::updatePrice(const std::string& symbol, double percent, bool increase) {
+
     if (auto* c = find(symbol)) {
         double p = c->getPrice();
         double delta = p * (percent / 100.0);

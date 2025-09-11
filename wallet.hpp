@@ -5,7 +5,6 @@
 
 class Wallet {
 private:
-
     double cashBalance;
     std::map<std::string, double> qty;
 
