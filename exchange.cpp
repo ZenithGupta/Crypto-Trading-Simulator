@@ -7,25 +7,25 @@ int Exchange::totalTrades = 0;
 Exchange::Exchange() = default;
 Exchange::~Exchange() = default;
 
-void Exchange::add_crypto_listing(const Crypto_currency& c){
-    crypto_list.push_back(c);
+void Exchange::add_crypto_listing(const Crypto_currency& c) {
+    listings.push_back(c);
 }
 
-Crypto_currency* Exchange::find(const string& symbol) {
+Crypto_currency* Exchange::find(const std::string& symbol) {
     for (auto& c : listings) if (c.getSymbol() == symbol) return &c;
     return nullptr;
 }
 
-const Crypto* Exchange::find(const string& symbol) const {
+const Crypto_currency* Exchange::find(const std::string& symbol) const {
     for (auto& c : listings) {
-    if (c.getSymbol() == symbol) {
-        return &c;
-    }
+        if (c.getSymbol() == symbol) {
+            return &c;
+        }
     }
     return nullptr;
 }
 
-bool Exchange::updatePrice(const string& symbol, double percent, bool increase) {
+bool Exchange::updatePrice(const std::string& symbol, double percent, bool increase) {
     if (auto* c = find(symbol)) {
         double p = c->getPrice();
         double delta = p * (percent / 100.0);
@@ -35,22 +35,19 @@ bool Exchange::updatePrice(const string& symbol, double percent, bool increase) 
     return false;
 }
 
-double Exchange::priceOf(const string& symbol) const {
+double Exchange::priceOf(const std::string& symbol) const {
     for (const auto& c : listings) {
         if (c.getSymbol() == symbol) return c.getPrice();
     }
-    return -1.0; 
+    return -1.0;
 }
 
 void Exchange::print() const {
-    cout << "Exchange Listings (" << Crypto_currency::totalCryptos << " cryptos):\n";
+    std::cout << "Exchange Listings (" << Crypto_currency::totalCrypto_count << " cryptos):\n";
     for (auto& c : listings) {
-        cout << "  " << setw(5) << c.getSymbol()
-                  << "  " << setw(12) << c.getName()
-                  << "  $" << fixed << setprecision(2) << c.getPrice() << "\n";
+        std::cout << "  " << std::setw(5) << c.getSymbol()
+            << "  " << std::setw(12) << c.getName()
+            << "  $" << std::fixed << std::setprecision(2) << c.getPrice() << "\n";
     }
-    cout << "Total Trades Executed: " << totalTrades << "\n";
+    std::cout << "Total Trades Executed: " << totalTrades << "\n";
 }
-
-
-

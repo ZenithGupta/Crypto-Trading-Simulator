@@ -1,50 +1,62 @@
 #include "wallet.hpp"
-#include<iomainp>
+#include <iostream>
+#include <iomanip>
 
-Wallet:: Wallet() : cashBalance(0.0){}
+Wallet::Wallet() : cashBalance(0.0) {}
 Wallet::Wallet(double initialCash) : cashBalance(initialCash) {}
 
-Wallet::Wallet(const Wallet& other) : cashBalance(other.cashBalance), qty(other.qty){
-
+Wallet::Wallet(const Wallet& other) : cashBalance(other.cashBalance), qty(other.qty) {
 }
 
-Wallet::~Wallet(){
-
+Wallet::~Wallet() {
 }
 
-double Wallet::getCash() const{
+double Wallet::getCash() const {
     return cashBalance;
 }
 
-void Wallet::setCash(double c){
+void Wallet::setCash(double c) {
     cashBalance = c;
 }
 
-void Wallet::deposite(int amount){
-    cashBalace += static_cast<double>(amount);
+void Wallet::deposit(int amount) {
+    cashBalance += static_cast<double>(amount);
 }
 
-void Wallet::withdraw(double amount){
-    if(amount > cashBalance) return false;
+void Wallet::deposit(double amount) {
+    cashBalance += amount;
+}
+
+bool Wallet::withdraw(double amount) {
+    if (amount > cashBalance) return false;
     cashBalance -= amount;
     return true;
 }
 
-void Wallet::addQty(const string& symbol , double units){
-    qty[symbol]+= units;
+void Wallet::addQty(const std::string& symbol, double units) {
+    qty[symbol] += units;
 }
 
-bool Wallet:: removeQty( const string& symbol , double units){
+double Wallet::getQty(const std::string& symbol) const {
+    if (qty.count(symbol)) {
+        return qty.at(symbol);
+    }
+    return 0.0;
+}
+
+bool Wallet::removeQty(const std::string& symbol, double units) {
     double have = getQty(symbol);
-    if(units > have) return false;
+    if (units > have) return false;
     qty[symbol] = have - units;
     return true;
 }
 
-void Wallet::print() const{
-    cout << "Cash: " << fixed << setpricision(2) << cashBalance << "\n";
-    cout << "Holdings: \n";
-    for(auto& [sym , u] : qty){
-        cout << " " << sym << ":" << u << "units\n";
+void Wallet::print() const {
+    std::cout << "Cash: $" << std::fixed << std::setprecision(2) << cashBalance << "\n";
+    std::cout << "Holdings:\n";
+    for (auto const& [sym, u] : qty) {
+        if (u > 0) {
+            std::cout << "  " << sym << ": " << u << " units\n";
+        }
     }
 }
