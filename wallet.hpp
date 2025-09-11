@@ -4,20 +4,19 @@
 #include <iostream>
 
 class Wallet {
-private:
+    private: 
     double cashBalance;
     std::map<std::string, double> qty;
 
-public:
-    Wallet();
-    explicit Wallet(double initialCash);
-    Wallet(const Wallet& other);
-    ~Wallet();
+    public :
+     Wallet();
+     explicit Wallet(double initialCash);
 
-    double getCash() const;
-    void setCash(double c);
-    void deposit(double amount);
-    void deposit(int amount);
+     Wallet(const Wallet& other);
+
+     double getCash() const;
+     void setCash (double c);
+     void deposit(int amount);
 
     bool withdraw(double amount);
 
