@@ -5,6 +5,7 @@
 
 class Wallet {
 private:
+
     double cashBalance;
     std::map<std::string, double> qty;
 
@@ -13,6 +14,7 @@ public:
     explicit Wallet(double initialCash);
     Wallet(const Wallet& other);
     ~Wallet();
+
 
     double getCash() const;
     void setCash(double c);
