@@ -46,6 +46,7 @@ void seedExchange(Exchange& ex) {
     ex.add_crypto_listing(Crypto_currency("Bitcoin", "BTC", 60000.0));
     ex.add_crypto_listing(Crypto_currency("Ether", "ETH", 2500.0));
     ex.add_crypto_listing(Crypto_currency("Solana", "SOL", 150.0));
+
     ex.updatePrice("ETH", 10.0, true);
 }
 
@@ -146,6 +147,7 @@ int main() {
                 cout << "[OK] " << sym << " is now $" << (px > 0 ? px : 0.0) << "\n";
             }
             else {
+
                 cout << "[ERR] Symbol not found\n";
             }
             break;
