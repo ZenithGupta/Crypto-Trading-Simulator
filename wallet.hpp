@@ -1,29 +1,30 @@
-#pragma once 
+#pragma once
 #include <map>
-#include<string>
-#include<iostream>
+#include <string>
+#include <iostream>
 
 class Wallet {
-    private: 
+private:
     double cashBalance;
-    map<string,double> qty;
+    std::map<std::string, double> qty;
 
-    public :
-     Wallet();
-     explicit Wallet(double initialCash);
+public:
+    Wallet();
+    explicit Wallet(double initialCash);
+    Wallet(const Wallet& other);
+    ~Wallet();
 
-     Wallet(const Wallet& other);
 
-     double getCash() const;
-     void setCash (double c);
-     void deposit(int amount);
+    double getCash() const;
+    void setCash(double c);
+    void deposit(double amount);
+    void deposit(int amount);
 
-     bool withdraw (double amount);
+    bool withdraw(double amount);
 
-     double getQty(const string& symbol) const;
-    void addQty (const string& symbol,double units);
-    bool removeQty(const string& symbol, double units);
+    double getQty(const std::string& symbol) const;
+    void addQty(const std::string& symbol, double units);
+    bool removeQty(const std::string& symbol, double units);
 
     void print() const;
 };
-

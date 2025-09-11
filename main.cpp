@@ -10,8 +10,9 @@
 using namespace std;
 
 class AdminGuard {
-    static inline const string kUser = "admin";
-    static inline const string kPass = "letmein";
+    static const string kUser;
+    static const string kPass;
+
 public:
     static bool loginInteractive() {
         string u, p;
@@ -28,21 +29,28 @@ public:
     }
 };
 
+const string AdminGuard::kUser = "admin";
+const string AdminGuard::kPass = "letmein";
 double netWorth(const User& u, const Exchange& ex,
-                const vector<string>& symbols) {
+    const vector<string>& symbols) {
+
     double worth = auditNetWorth(u);
     for (const auto& sym : symbols) {
         double units = u.getWallet().getQty(sym);
         if (units <= 0) continue;
-        if (auto px = ex.priceOf(sym)) worth += units * *px;
+        double px = ex.priceOf(sym);
+        if (px > 0) {
+            worth += units * px;
+        }
     }
     return worth;
 }
 
 void seedExchange(Exchange& ex) {
-    ex.add_crypto_listing(Crypto_currency("Bitcoin",  "BTC", 60000.0));
-    ex.add_crypto_listing(Crypto_currency("Ether",    "ETH", 2500.0));
-    ex.add_crypto_listing(Crypto_currency("Solana",   "SOL", 150.0));
+    ex.add_crypto_listing(Crypto_currency("Bitcoin", "BTC", 60000.0));
+    ex.add_crypto_listing(Crypto_currency("Ether", "ETH", 2500.0));
+    ex.add_crypto_listing(Crypto_currency("Solana", "SOL", 150.0));
+
     ex.updatePrice("ETH", 10.0, true);
 }
 
@@ -66,18 +74,18 @@ int main() {
 
     ex.print();
     user.printSummary();
-    vector<string> universe = {"BTC", "ETH", "SOL"};
+    vector<string> universe = { "BTC", "ETH", "SOL" };
 
     while (true) {
         cout << "\n================ MENU ================\n"
-             << "1) List Market\n"
-             << "2) View Portfolio\n"
-             << "3) Deposit Funds\n"
-             << "4) Buy Crypto\n"
-             << "5) Sell Crypto\n"
-             << "6) Net Worth\n"
-             << "8) Update Price (percentage) [ADMIN]\n"
-             << "0) Exit\n> ";
+            << "1) List Market\n"
+            << "2) View Portfolio\n"
+            << "3) Deposit Funds\n"
+            << "4) Buy Crypto\n"
+            << "5) Sell Crypto\n"
+            << "6) Net Worth\n"
+            << "8) Update Price (percentage) [ADMIN]\n"
+            << "0) Exit\n> ";
 
         int choice;
         if (!(cin >> choice)) { clearInput(); continue; }
@@ -97,7 +105,9 @@ int main() {
             if (!(cin >> amt)) { clearInput(); break; }
             if (floor(amt) == amt) {
                 user.getWallet().deposit((int)amt);
-            } else {
+            }
+            else {
+
                 user.getWallet().deposit(amt);
             }
             cout << "[OK] Deposited. New cash: " << user.getWallet().getCash() << "\n";
@@ -139,8 +149,10 @@ int main() {
             if (!(cin >> inc)) { clearInput(); break; }
             if (ex.updatePrice(sym, pct, inc == 1)) {
                 auto px = ex.priceOf(sym);
-                cout << "[OK] " << sym << " is now $" << (px ? px : 0.0) << "\n";
-            } else {
+                cout << "[OK] " << sym << " is now $" << (px > 0 ? px : 0.0) << "\n";
+            }
+            else {
+
                 cout << "[ERR] Symbol not found\n";
             }
             break;
@@ -152,4 +164,5 @@ int main() {
 
     cout << "Done.\n";
     return 0;
+
 }
