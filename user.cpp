@@ -21,6 +21,5 @@ void User::printSummary() const {
 }
 
 double auditNetWorth(const User& u) {
-
     return u.wallet.getCash();
 }

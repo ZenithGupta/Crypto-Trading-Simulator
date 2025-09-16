@@ -5,6 +5,10 @@
 #include "crypto.hpp"
 #include "user.hpp"
 
+class Exchange;
+
+void saveCryptoData(const Exchange& ex);
+
 class Exchange {
 private:
     std::vector<Crypto_currency> listings;
@@ -19,8 +23,12 @@ public:
     Crypto_currency* find(const std::string& symbol);
     const Crypto_currency* find(const std::string& symbol) const;
 
+    bool isListingsEmpty() const;
+
     bool updatePrice(const std::string& symbol, double percent, bool increase);
     double priceOf(const std::string& symbol) const;
 
     void print() const;
+    
+    friend void saveCryptoData(const Exchange& ex);
 };

@@ -3,11 +3,74 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include "user.hpp"
 #include "exchange.hpp"
 #include "trade.hpp"
 
 using namespace std;
+
+void saveUserData(const User& user) {
+    ofstream file("user_data.csv");
+    if (file.is_open()) {
+        file << user.getId() << "," << user.getName() << "," << user.getWallet().getCash() << "\n";
+        file.close();
+    }
+}
+
+void loadUserData(User*& user) {
+    ifstream file("user_data.csv");
+    if (file.is_open()) {
+        string line;
+        if (getline(file, line)) {
+            stringstream ss(line);
+            string id_str, name, cash_str;
+            if (getline(ss, id_str, ',') && getline(ss, name, ',') && getline(ss, cash_str, ',')) {
+                try {
+                    double cash = stod(cash_str);
+                    delete user;
+                    user = new User(name, cash);
+                } catch (const std::invalid_argument& e) {
+                    cerr << "Error reading cash value from CSV." << endl;
+                }
+            }
+        }
+        file.close();
+    }
+}
+
+void saveCryptoData(const Exchange& ex) {
+    ofstream file("crypto_data.csv");
+    if (file.is_open()) {
+        for (const auto& crypto : ex.listings) {
+            file << crypto.getSymbol() << "," << crypto.getName() << "," << crypto.getPrice() << "\n";
+        }
+        file.close();
+    }
+}
+
+void loadCryptoData(Exchange& ex) {
+    ifstream file("crypto_data.csv");
+    if (file.is_open()) {
+        string line;
+        while (getline(file, line)) {
+            stringstream ss(line);
+            string symbol, name, price_str;
+            if (getline(ss, symbol, ',') && getline(ss, name, ',') && getline(ss, price_str, ',')) {
+                try {
+                    double price = stod(price_str);
+                    ex.add_crypto_listing(Crypto_currency(name, symbol, price));
+                } catch (const std::invalid_argument& e) {
+                    cerr << "Error reading price value from CSV." << endl;
+                }
+            }
+        }
+        file.close();
+    }
+}
+
 
 class AdminGuard {
     static const string kUser;
@@ -68,12 +131,23 @@ int main() {
     cout << "=== Crypto Trading Simulator (OOP Demo) ===\n\n";
 
     Exchange ex;
-    seedExchange(ex);
+    loadCryptoData(ex);
+    if(ex.isListingsEmpty()){
+        seedExchange(ex);
+    }
 
-    User user("Alice", 10'000.00);
+    User* user = nullptr;
+    try {
+        user = new User("Alice", 10000.00);
+    } catch (const std::bad_alloc& e) {
+        cerr << "Failed to allocate memory for User: " << e.what() << endl;
+        return 1;
+    }
+    
+    loadUserData(user);
 
     ex.print();
-    user.printSummary();
+    user->printSummary();
     vector<string> universe = { "BTC", "ETH", "SOL" };
 
     while (true) {
@@ -97,20 +171,20 @@ int main() {
             ex.print();
             break;
         case 2:
-            printPortfolio(user);
+            printPortfolio(*user);
             break;
         case 3: {
             cout << "Enter amount to deposit (supports int or double): ";
             double amt;
             if (!(cin >> amt)) { clearInput(); break; }
             if (floor(amt) == amt) {
-                user.getWallet().deposit((int)amt);
+                user->getWallet().deposit((int)amt);
             }
             else {
 
-                user.getWallet().deposit(amt);
+                user->getWallet().deposit(amt);
             }
-            cout << "[OK] Deposited. New cash: " << user.getWallet().getCash() << "\n";
+            cout << "[OK] Deposited. New cash: " << user->getWallet().getCash() << "\n";
             break;
         }
         case 4: {
@@ -120,7 +194,7 @@ int main() {
             cout << "Enter units to buy: ";
             if (!(cin >> units)) { clearInput(); break; }
             BuyTrade order(sym, units, 0);
-            order.execute(user, ex);
+            order.execute(*user, ex);
             break;
         }
         case 5: {
@@ -130,11 +204,11 @@ int main() {
             cout << "Enter units to sell: ";
             if (!(cin >> units)) { clearInput(); break; }
             SellTrade order(sym, units, 0);
-            order.execute(user, ex);
+            order.execute(*user, ex);
             break;
         }
         case 6: {
-            double w = netWorth(user, ex, universe);
+            double w = netWorth(*user, ex, universe);
             cout << "Net Worth: $" << w << "\n";
             break;
         }
@@ -152,7 +226,6 @@ int main() {
                 cout << "[OK] " << sym << " is now $" << (px > 0 ? px : 0.0) << "\n";
             }
             else {
-
                 cout << "[ERR] Symbol not found\n";
             }
             break;
@@ -162,7 +235,11 @@ int main() {
         }
     }
 
+    saveUserData(*user);
+    saveCryptoData(ex);
+    
+    delete user;
+
     cout << "Done.\n";
     return 0;
-
 }
