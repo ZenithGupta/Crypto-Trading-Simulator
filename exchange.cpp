@@ -12,14 +12,12 @@ void Exchange::add_crypto_listing(const Crypto_currency& c) {
 }
 
 Crypto_currency* Exchange::find(const std::string& symbol) {
-
     for (auto& c : listings) if (c.getSymbol() == symbol) return &c;
     return nullptr;
 }
 
-
 const Crypto_currency* Exchange::find(const std::string& symbol) const {
-    for (auto& c : listings) {
+    for (const auto& c : listings) {
         if (c.getSymbol() == symbol) {
             return &c;
         }
@@ -27,8 +25,11 @@ const Crypto_currency* Exchange::find(const std::string& symbol) const {
     return nullptr;
 }
 
-bool Exchange::updatePrice(const std::string& symbol, double percent, bool increase) {
+bool Exchange::isListingsEmpty() const {
+    return listings.empty();
+}
 
+bool Exchange::updatePrice(const std::string& symbol, double percent, bool increase) {
     if (auto* c = find(symbol)) {
         double p = c->getPrice();
         double delta = p * (percent / 100.0);
@@ -47,7 +48,7 @@ double Exchange::priceOf(const std::string& symbol) const {
 
 void Exchange::print() const {
     std::cout << "Exchange Listings (" << Crypto_currency::totalCrypto_count << " cryptos):\n";
-    for (auto& c : listings) {
+    for (const auto& c : listings) {
         std::cout << "  " << std::setw(5) << c.getSymbol()
             << "  " << std::setw(12) << c.getName()
             << "  $" << std::fixed << std::setprecision(2) << c.getPrice() << "\n";

@@ -4,17 +4,17 @@
 
 class User {
 private:
-    const int   userId;     
+    const int   userId;
     std::string name;
     Wallet      wallet;
 
-    static int nextId;        
+    static int nextId;
     friend double auditNetWorth(const User& u);
 
 public:
-    User();                                 
-    User(std::string name, double cash);    
-    User(const User& other);                
+    User();
+    User(std::string name, double cash = 0.0);
+    User(const User& other);
     ~User();
 
     int              getId()   const;
@@ -24,5 +24,5 @@ public:
     const Wallet&    getWallet() const;
 
     void printSummary() const;
-};;
+};
 double auditNetWorth(const User& u);
