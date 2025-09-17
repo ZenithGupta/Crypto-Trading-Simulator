@@ -162,7 +162,14 @@ int main() {
             << "0) Exit\n> ";
 
         int choice;
-        if (!(cin >> choice)) { clearInput(); continue; }
+        cin >> choice;
+
+        if (cin.fail()) {
+            cout << "Invalid input. Please enter a number." << endl;
+            clearInput();
+            continue;
+        }
+
 
         if (choice == 0) break;
 
@@ -176,7 +183,11 @@ int main() {
         case 3: {
             cout << "Enter amount to deposit (supports int or double): ";
             double amt;
-            if (!(cin >> amt)) { clearInput(); break; }
+            if (!(cin >> amt)) { 
+                cout << "Invalid input. Please enter a number." << endl;
+                clearInput(); 
+                break; 
+            }
             if (floor(amt) == amt) {
                 user->getWallet().deposit((int)amt);
             }
@@ -192,7 +203,11 @@ int main() {
             cout << "Enter symbol to BUY (e.g., ETH): ";
             cin >> sym;
             cout << "Enter units to buy: ";
-            if (!(cin >> units)) { clearInput(); break; }
+            if (!(cin >> units)) { 
+                cout << "Invalid input. Please enter a number." << endl;
+                clearInput(); 
+                break; 
+            }
             BuyTrade order(sym, units, 0);
             order.execute(*user, ex);
             break;
@@ -202,7 +217,11 @@ int main() {
             cout << "Enter symbol to SELL (e.g., ETH): ";
             cin >> sym;
             cout << "Enter units to sell: ";
-            if (!(cin >> units)) { clearInput(); break; }
+            if (!(cin >> units)) { 
+                cout << "Invalid input. Please enter a number." << endl;
+                clearInput(); 
+                break; 
+            }
             SellTrade order(sym, units, 0);
             order.execute(*user, ex);
             break;
@@ -218,9 +237,17 @@ int main() {
             cout << "Update % for which symbol? ";
             cin >> sym;
             cout << "Percent change (+/-): ";
-            if (!(cin >> pct)) { clearInput(); break; }
+            if (!(cin >> pct)) { 
+                cout << "Invalid input. Please enter a number." << endl;
+                clearInput(); 
+                break; 
+            }
             cout << "Increase? (1=yes, 0=no): ";
-            if (!(cin >> inc)) { clearInput(); break; }
+            if (!(cin >> inc)) { 
+                cout << "Invalid input. Please enter a number." << endl;
+                clearInput(); 
+                break; 
+            }
             if (ex.updatePrice(sym, pct, inc == 1)) {
                 auto px = ex.priceOf(sym);
                 cout << "[OK] " << sym << " is now $" << (px > 0 ? px : 0.0) << "\n";

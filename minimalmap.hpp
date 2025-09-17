@@ -1,8 +1,8 @@
 #ifndef MINIMAL_MAP_HPP
 #define MINIMAL_MAP_HPP
 
-#include <vector>
 #include <stdexcept>
+#include "MinimalList.hpp"
 
 template <typename Key, typename Value>
 class MinimalMap {
@@ -51,7 +51,7 @@ private:
         }
     }
 
-    void get_keys_in_order(Node* node, std::vector<Key>& keys) const {
+    void get_keys_in_order(Node* node, MinimalList<Key>& keys) const {
         if (node == nullptr) {
             return;
         }
@@ -110,8 +110,8 @@ public:
         root = remove_recursive(root, key);
     }
 
-    std::vector<Key> get_keys() const {
-        std::vector<Key> keys;
+    MinimalList<Key> get_keys() const {
+        MinimalList<Key> keys;
         get_keys_in_order(root, keys);
         return keys;
     }
@@ -121,4 +121,4 @@ public:
     }
 };
 
-#endif // MINIMAL_MAP_HPP
+#endif
