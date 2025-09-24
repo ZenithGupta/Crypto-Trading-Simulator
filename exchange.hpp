@@ -4,6 +4,7 @@
 #include <string>
 #include "crypto.hpp"
 #include "user.hpp"
+#include "MinimalList.hpp"
 
 class Exchange;
 
@@ -22,6 +23,7 @@ public:
     void add_crypto_listing(const Crypto_currency& c);
     Crypto_currency* find(const std::string& symbol);
     const Crypto_currency* find(const std::string& symbol) const;
+    MinimalList<Crypto_currency> getListingsAsMinimalList() const;
 
     bool isListingsEmpty() const;
 
@@ -29,6 +31,6 @@ public:
     double priceOf(const std::string& symbol) const;
 
     void print() const;
-    
+  
     friend void saveCryptoData(const Exchange& ex);
 };

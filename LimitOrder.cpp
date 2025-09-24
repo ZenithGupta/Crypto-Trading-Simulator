@@ -139,4 +139,4 @@ void LimitOrderManager::checkAndExecuteOrders(User& user, MinimalList<Crypto_cur
     if (ordersChanged) {
         saveOrders();
     }
-}
+}       

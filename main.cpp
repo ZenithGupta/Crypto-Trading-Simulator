@@ -1,245 +1,140 @@
 #include <iostream>
-#include <limits>
 #include <vector>
+#include <map>
 #include <string>
-#include <cmath>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
-#include "user.hpp"
-#include "exchange.hpp"
-#include "trade.hpp"
+#include <iomanip>
+#include <limits>
+#include <algorithm>
 
-using namespace std;
+class User;
+class Exchange;
+class AuthManager;
+class LimitOrderManager;
 
-void saveUserData(const User& user) {
-    ofstream file("user_data.csv");
-    if (file.is_open()) {
-        file << user.getId() << "," << user.getName() << "," << user.getWallet().getCash() << "\n";
-        file.close();
-    }
-}
-
-void loadUserData(User*& user) {
-    ifstream file("user_data.csv");
-    if (file.is_open()) {
-        string line;
-        if (getline(file, line)) {
-            stringstream ss(line);
-            string id_str, name, cash_str;
-            if (getline(ss, id_str, ',') && getline(ss, name, ',') && getline(ss, cash_str, ',')) {
-                try {
-                    double cash = stod(cash_str);
-                    delete user;
-                    user = new User(name, cash);
-                } catch (const std::invalid_argument& e) {
-                    cerr << "Error reading cash value from CSV." << endl;
-                }
-            }
-        }
-        file.close();
-    }
-}
-
-void saveCryptoData(const Exchange& ex) {
-    ofstream file("crypto_data.csv");
-    if (file.is_open()) {
-        for (const auto& crypto : ex.listings) {
-            file << crypto.getSymbol() << "," << crypto.getName() << "," << crypto.getPrice() << "\n";
-        }
-        file.close();
-    }
-}
-
-void loadCryptoData(Exchange& ex) {
-    ifstream file("crypto_data.csv");
-    if (file.is_open()) {
-        string line;
-        while (getline(file, line)) {
-            stringstream ss(line);
-            string symbol, name, price_str;
-            if (getline(ss, symbol, ',') && getline(ss, name, ',') && getline(ss, price_str, ',')) {
-                try {
-                    double price = stod(price_str);
-                    ex.add_crypto_listing(Crypto_currency(name, symbol, price));
-                } catch (const std::invalid_argument& e) {
-                    cerr << "Error reading price value from CSV." << endl;
-                }
-            }
-        }
-        file.close();
-    }
-}
-
-
-class AdminGuard {
-    static const string kUser;
-    static const string kPass;
+class Crypto_currency {
+private:
+    std::string name;
+    std::string symbol;
+    double price;
 
 public:
-    static bool loginInteractive() {
-        string u, p;
-        cout << "[Admin Login]\nUsername: ";
-        cin >> u;
-        cout << "Password: ";
-        cin >> p;
-        if (u == kUser && p == kPass) {
-            cout << "[OK] Admin authenticated.\n";
-            return true;
-        }
-        cout << "[ERR] Invalid credentials.\n";
-        return false;
-    }
+    Crypto_currency(const std::string& name, const std::string& symbol, double price);
+
+    const std::string& getName() const;
+    const std::string& getSymbol() const;
+    double getPrice() const;
+    void setPrice(double newPrice);
 };
 
-const string AdminGuard::kUser = "admin";
-const string AdminGuard::kPass = "letmein";
-double netWorth(const User& u, const Exchange& ex,
-    const vector<string>& symbols) {
+Crypto_currency::Crypto_currency(const std::string& name, const std::string& symbol, double price)
+    : name(name), symbol(symbol), price(price) {}
 
-    double worth = auditNetWorth(u);
-    for (const auto& sym : symbols) {
-        double units = u.getWallet().getQty(sym);
-        if (units <= 0) continue;
-        double px = ex.priceOf(sym);
-        if (px > 0) {
-            worth += units * px;
-        }
+const std::string& Crypto_currency::getName() const { return name; }
+const std::string& Crypto_currency::getSymbol() const { return symbol; }
+double Crypto_currency::getPrice() const { return price; }
+void Crypto_currency::setPrice(double newPrice) { price = newPrice; }
+
+class Wallet {
+private:
+    double cashBalance;
+    std::map<std::string, double> holdings;
+
+public:
+    Wallet();
+    explicit Wallet(double initialCash);
+
+    double getCash() const;
+    void deposit(double amount);
+    bool withdraw(double amount);
+
+    double getQty(const std::string& symbol) const;
+    void addQty(const std::string& symbol, double units);
+    bool removeQty(const std::string& symbol, double units);
+
+    void print() const;
+    const std::map<std::string, double>& getHoldings() const;
+};
+
+Wallet::Wallet() : cashBalance(0.0) {}
+Wallet::Wallet(double initialCash) : cashBalance(initialCash) {}
+
+double Wallet::getCash() const { return cashBalance; }
+
+void Wallet::deposit(double amount) {
+    if (amount > 0) {
+        cashBalance += amount;
     }
-    return worth;
 }
 
-void seedExchange(Exchange& ex) {
-    ex.add_crypto_listing(Crypto_currency("Bitcoin", "BTC", 60000.0));
-    ex.add_crypto_listing(Crypto_currency("Ether", "ETH", 2500.0));
-    ex.add_crypto_listing(Crypto_currency("Solana", "SOL", 150.0));
-
-    ex.updatePrice("ETH", 10.0, true);
+bool Wallet::withdraw(double amount) {
+    if (amount > 0 && amount <= cashBalance) {
+        cashBalance -= amount;
+        return true;
+    }
+    return false;
 }
 
-void printPortfolio(const User& u) {
-    cout << "[Portfolio]\n";
-    u.getWallet().print();
+double Wallet::getQty(const std::string& symbol) const {
+    auto it = holdings.find(symbol);
+    return (it != holdings.end()) ? it->second : 0.0;
 }
 
-void clearInput() {
-    cin.clear();
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+void Wallet::addQty(const std::string& symbol, double units) {
+    if (units > 0) {
+        holdings[symbol] += units;
+    }
 }
 
-int main() {
-    cout << "=== Crypto Trading Simulator (OOP Demo) ===\n\n";
-
-    Exchange ex;
-    loadCryptoData(ex);
-    if(ex.isListingsEmpty()){
-        seedExchange(ex);
+bool Wallet::removeQty(const std::string& symbol, double units) {
+    if (units > 0 && getQty(symbol) >= units) {
+        holdings[symbol] -= units;
+        if (holdings[symbol] < 1e-9) { 
+            holdings.erase(symbol);
+        }
+        return true;
     }
+    return false;
+}
 
-    User* user = nullptr;
-    try {
-        user = new User("Alice", 10000.00);
-    } catch (const std::bad_alloc& e) {
-        cerr << "Failed to allocate memory for User: " << e.what() << endl;
-        return 1;
-    }
-    
-    loadUserData(user);
-
-    ex.print();
-    user->printSummary();
-    vector<string> universe = { "BTC", "ETH", "SOL" };
-
-    while (true) {
-        cout << "\n================ MENU ================\n"
-            << "1) List Market\n"
-            << "2) View Portfolio\n"
-            << "3) Deposit Funds\n"
-            << "4) Buy Crypto\n"
-            << "5) Sell Crypto\n"
-            << "6) Net Worth\n"
-            << "8) Update Price (percentage) [ADMIN]\n"
-            << "0) Exit\n> ";
-
-        int choice;
-        if (!(cin >> choice)) { clearInput(); continue; }
-
-        if (choice == 0) break;
-
-        switch (choice) {
-        case 1:
-            ex.print();
-            break;
-        case 2:
-            printPortfolio(*user);
-            break;
-        case 3: {
-            cout << "Enter amount to deposit (supports int or double): ";
-            double amt;
-            if (!(cin >> amt)) { clearInput(); break; }
-            if (floor(amt) == amt) {
-                user->getWallet().deposit((int)amt);
-            }
-            else {
-
-                user->getWallet().deposit(amt);
-            }
-            cout << "[OK] Deposited. New cash: " << user->getWallet().getCash() << "\n";
-            break;
-        }
-        case 4: {
-            string sym; double units;
-            cout << "Enter symbol to BUY (e.g., ETH): ";
-            cin >> sym;
-            cout << "Enter units to buy: ";
-            if (!(cin >> units)) { clearInput(); break; }
-            BuyTrade order(sym, units, 0);
-            order.execute(*user, ex);
-            break;
-        }
-        case 5: {
-            string sym; double units;
-            cout << "Enter symbol to SELL (e.g., ETH): ";
-            cin >> sym;
-            cout << "Enter units to sell: ";
-            if (!(cin >> units)) { clearInput(); break; }
-            SellTrade order(sym, units, 0);
-            order.execute(*user, ex);
-            break;
-        }
-        case 6: {
-            double w = netWorth(*user, ex, universe);
-            cout << "Net Worth: $" << w << "\n";
-            break;
-        }
-        case 8: {
-            if (!AdminGuard::loginInteractive()) break;
-            string sym; double pct; int inc;
-            cout << "Update % for which symbol? ";
-            cin >> sym;
-            cout << "Percent change (+/-): ";
-            if (!(cin >> pct)) { clearInput(); break; }
-            cout << "Increase? (1=yes, 0=no): ";
-            if (!(cin >> inc)) { clearInput(); break; }
-            if (ex.updatePrice(sym, pct, inc == 1)) {
-                auto px = ex.priceOf(sym);
-                cout << "[OK] " << sym << " is now $" << (px > 0 ? px : 0.0) << "\n";
-            }
-            else {
-                cout << "[ERR] Symbol not found\n";
-            }
-            break;
-        }
-        default:
-            cout << "Unknown option.\n";
+void Wallet::print() const {
+    std::cout << "Cash: $" << std::fixed << std::setprecision(2) << cashBalance << "\n";
+    std::cout << "Holdings:\n";
+    if (holdings.empty()) {
+        std::cout << "  No holdings yet.\n";
+    } else {
+        for (const auto& pair : holdings) {
+            std::cout << "  " << pair.first << ": " << pair.second << " units\n";
         }
     }
+}
 
-    saveUserData(*user);
-    saveCryptoData(ex);
-    
-    delete user;
+const std::map<std::string, double>& Wallet::getHoldings() const { return holdings; }
 
-    cout << "Done.\n";
-    return 0;
+
+class User {
+private:
+    std::string name;
+    Wallet wallet;
+
+public:
+    User(const std::string& name, double cash = 0.0);
+
+    const std::string& getName() const;
+    Wallet& getWallet();
+    const Wallet& getWallet() const;
+    void printSummary() const;
+};
+
+User::User(const std::string& name, double cash) : name(name), wallet(cash) {}
+const std::string& User::getName() const { return name; }
+Wallet& User::getWallet() { return wallet; }
+const Wallet& User::getWallet() const { return wallet; }
+
+void User::printSummary() const {
+    std::cout << "\n--- User Portfolio ---\n";
+    std::cout << "Welcome, " << name << "!\n";
+    wallet.print();
+    std::cout << "----------------------\n";
 }
