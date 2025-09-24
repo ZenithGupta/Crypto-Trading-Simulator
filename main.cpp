@@ -137,3 +137,115 @@ void User::printSummary() const {
     wallet.print();
     std::cout << "----------------------\n";
 }
+
+class Exchange {
+private:
+    std::vector<Crypto_currency> listings;
+
+public:
+    static int totalTrades;
+
+    void add_crypto_listing(const Crypto_currency& c);
+    Crypto_currency* find(const std::string& symbol);
+    double priceOf(const std::string& symbol);
+    bool isListingsEmpty() const;
+    void print() const;
+    const std::vector<Crypto_currency>& getListings() const;
+};
+
+int Exchange::totalTrades = 0;
+
+void Exchange::add_crypto_listing(const Crypto_currency& c) { listings.push_back(c); }
+
+Crypto_currency* Exchange::find(const std::string& symbol) {
+    for (auto& crypto : listings) {
+        if (crypto.getSymbol() == symbol) {
+            return &crypto;
+        }
+    }
+    return nullptr;
+}
+
+double Exchange::priceOf(const std::string& symbol) {
+    Crypto_currency* crypto = find(symbol);
+    return (crypto != nullptr) ? crypto->getPrice() : -1.0;
+}
+
+bool Exchange::isListingsEmpty() const { return listings.empty(); }
+
+void Exchange::print() const {
+    std::cout << "\n--- Crypto Exchange Listings ---\n";
+    for (const auto& c : listings) {
+        std::cout << "  " << std::setw(5) << c.getSymbol()
+                  << "  " << std::setw(12) << c.getName()
+                  << "  $" << std::fixed << std::setprecision(2) << c.getPrice() << "\n";
+    }
+    std::cout << "Total Trades on Exchange: " << totalTrades << "\n";
+    std::cout << "-------------------------------\n";
+}
+
+const std::vector<Crypto_currency>& Exchange::getListings() const { return listings; }
+
+
+class Trade {
+protected:
+    std::string symbol;
+    double units;
+
+public:
+    Trade(const std::string& sym, double u);
+    virtual ~Trade() = default;
+    virtual bool execute(User& user, Exchange& ex) = 0;
+};
+
+Trade::Trade(const std::string& sym, double u) : symbol(sym), units(u) {}
+
+class BuyTrade : public Trade {
+public:
+    BuyTrade(const std::string& sym, double u);
+    bool execute(User& user, Exchange& ex) override;
+};
+
+BuyTrade::BuyTrade(const std::string& sym, double u) : Trade(sym, u) {}
+
+bool BuyTrade::execute(User& user, Exchange& ex) {
+    double px = ex.priceOf(symbol);
+    if (px < 0) {
+        std::cout << "Symbol not found.\n";
+        return false;
+    }
+    double cost = px * units;
+    if (!user.getWallet().withdraw(cost)) {
+        std::cout << "Insufficient cash to complete purchase.\n";
+        return false;
+    }
+    user.getWallet().addQty(symbol, units);
+    Exchange::totalTrades++;
+    std::cout << "SUCCESS: Bought " << units << " " << symbol << " for $" << std::fixed << std::setprecision(2) << cost << "\n";
+    return true;
+}
+
+class SellTrade : public Trade {
+public:
+    SellTrade(const std::string& sym, double u);
+    bool execute(User& user, Exchange& ex) override;
+};
+
+SellTrade::SellTrade(const std::string& sym, double u) : Trade(sym, u) {}
+
+bool SellTrade::execute(User& user, Exchange& ex) {
+    double px = ex.priceOf(symbol);
+    if (px < 0) {
+        std::cout << "Symbol not found.\n";
+        return false;
+    }
+    if (!user.getWallet().removeQty(symbol, units)) {
+        std::cout << "Insufficient units to sell.\n";
+        return false;
+    }
+    double earnings = px * units;
+    user.getWallet().deposit(earnings);
+    Exchange::totalTrades++;
+    std::cout << "SUCCESS: Sold " << units << " " << symbol << " for $" << std::fixed << std::setprecision(2) << earnings << "\n";
+    return true;
+}
