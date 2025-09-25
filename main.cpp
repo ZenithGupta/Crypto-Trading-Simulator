@@ -553,3 +553,227 @@ void LimitOrderManager::checkAndExecuteAllOrders(Exchange& ex, AuthManager& auth
         saveOrders();
     }
 }
+
+void clearInput() {
+    std::cin.clear();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+
+template <typename T>
+T getNumericInput(const std::string& prompt) {
+    T value;
+    std::cout << prompt;
+    while (!(std::cin >> value)) {
+        std::cout << "Wrong input, enter a numeric value: ";
+        clearInput();
+    }
+    return value;
+}
+
+void saveCryptoData(const Exchange& ex) {
+    std::ofstream file("crypto_data.csv");
+    if (!file) return;
+
+    for (const auto& crypto : ex.getListings()) {
+        file << crypto.getName() << "," << crypto.getSymbol() << "," << crypto.getPrice() << std::endl;
+    }
+}
+
+void loadCryptoData(Exchange& ex) {
+    std::ifstream file("crypto_data.csv");
+    if (!file) return;
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string name, symbol, price_str;
+        std::getline(ss, name, ',');
+        std::getline(ss, symbol, ',');
+        std::getline(ss, price_str);
+        if (!name.empty()) {
+            ex.add_crypto_listing(Crypto_currency(name, symbol, std::stod(price_str)));
+        }
+    }
+}
+
+void seedExchange(Exchange& ex) {
+    ex.add_crypto_listing(Crypto_currency("Bitcoin", "BTC", 60000.0));
+    ex.add_crypto_listing(Crypto_currency("Ether", "ETH", 2500.0));
+    ex.add_crypto_listing(Crypto_currency("Solana", "SOL", 150.0));
+}
+
+void adminMenu(Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager) {
+    while (true) {
+        std::cout << "\n--- Admin Menu ---\n"
+                  << "1) Update Crypto Price\n"
+                  << "0) Logout\n> ";
+        int choice = getNumericInput<int>("");
+
+        if (choice == 0) break;
+
+        if (choice == 1) {
+            std::string sym;
+            std::cout << "Update % for which symbol? ";
+            std::cin >> sym;
+            double pct = getNumericInput<double>("Percent change (+/-): ");
+            int inc = getNumericInput<int>("Increase? (1=yes, 0=no): ");
+
+            Crypto_currency* crypto = ex.find(sym);
+            if (crypto) {
+                double p = crypto->getPrice();
+                double delta = p * (pct / 100.0);
+                crypto->setPrice(inc == 1 ? p + delta : p - delta);
+                std::cout << "[OK] " << sym << " is now $" << crypto->getPrice() << "\n";
+                
+                std::cout << "Checking all pending limit orders against new price...\n";
+                limitManager.checkAndExecuteAllOrders(ex, auth);
+
+            } else {
+                std::cout << "[ERR] Symbol not found\n";
+            }
+        } else {
+            std::cout << "Unknown option.\n";
+        }
+    }
+}
+
+void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager) {
+    while (true) {
+        limitManager.checkAndExecuteUserOrders(user, ex);
+
+        std::cout << "\n=========== USER MENU ============\n"
+                  << "1) List Market\n"
+                  << "2) View Portfolio\n"
+                  << "3) Deposit Funds\n"
+                  << "4) Buy Crypto (Market Order)\n"
+                  << "5) Sell Crypto (Market Order)\n"
+                  << "6) Place Limit Order\n"
+                  << "7) View My Limit Orders\n"
+                  << "0) Save & Logout\n> ";
+        int choice = getNumericInput<int>("");
+
+        if (choice == 0) {
+            auth.saveUserData(user);
+            std::cout << "Data saved. Logging out.\n";
+            break;
+        }
+
+        switch (choice) {
+            case 1: ex.print(); break;
+            case 2: user.printSummary(); break;
+            case 3: {
+                double amt = getNumericInput<double>("Enter amount to deposit: ");
+                user.getWallet().deposit(amt);
+                std::cout << "[OK] Deposited. New cash: $" << user.getWallet().getCash() << "\n";
+                break;
+            }
+            case 4: {
+                std::string sym;
+                std::cout << "Enter symbol to BUY (e.g., ETH): ";
+                std::cin >> sym;
+                double units = getNumericInput<double>("Enter units to buy: ");
+                BuyTrade(sym, units).execute(user, ex);
+                break;
+            }
+            case 5: {
+                std::string sym;
+                std::cout << "Enter symbol to SELL (e.g., ETH): ";
+                std::cin >> sym;
+                double units = getNumericInput<double>("Enter units to sell: ");
+                SellTrade(sym, units).execute(user, ex);
+                break;
+            }
+            case 6: {
+                std::string sym;
+                std::cout << "Place a new Limit Order\n";
+                std::cout << "Enter symbol (e.g., BTC): ";
+                std::cin >> sym;
+
+                if (ex.find(sym) == nullptr) {
+                    std::cout << "Error: Symbol '" << sym << "' is not listed on the market.\n";
+                    continue;
+                }
+                double units = getNumericInput<double>("Enter units: ");
+                double price = getNumericInput<double>("Enter target price: $");
+                int type = getNumericInput<int>("Is this a BUY or SELL order? (1 for Buy, 2 for Sell): ");
+
+                if (type == 1 || type == 2) {
+                    limitManager.addOrder(user.getName(), sym, units, price, (type == 1));
+                } else {
+                    std::cout << "Invalid order type.\n";
+                }
+                break;
+            }
+            case 7: {
+                limitManager.displayUserOrders(user.getName());
+                break;
+            }
+            default:
+                std::cout << "Unknown option.\n";
+        }
+    }
+}
+
+
+// --- Main Application ---
+int main() {
+    Exchange ex;
+    AuthManager auth;
+    LimitOrderManager limitManager;
+    
+    loadCryptoData(ex);
+    if (ex.isListingsEmpty()) {
+        seedExchange(ex);
+    }
+    
+    std::cout << "====== Crypto Trading Simulator ======\n";
+
+    while (true) {
+        std::cout << "\n--- Welcome ---\n"
+                  << "1. Admin Login\n"
+                  << "2. User Login\n"
+                  << "3. User Sign Up\n"
+                  << "0. Exit\n> ";
+        int choice = getNumericInput<int>("");
+
+        if (choice == 0) break;
+        
+        switch(choice) {
+            case 1: {
+                std::string user, pass;
+                std::cout << "--- Admin Login ---\n";
+                std::cout << "Username: "; std::cin >> user;
+                std::cout << "Password: "; std::cin >> pass;
+                if (user == "admin" && pass == "letmein") {
+                    std::cout << "Admin login successful.\n";
+                    adminMenu(ex, auth, limitManager);
+                } else {
+                    std::cout << "Invalid admin credentials.\n";
+                }
+                break;
+            }
+            case 2: {
+                User* currentUser = auth.login();
+                if (currentUser) {
+                    userMenu(*currentUser, ex, auth, limitManager);
+                    delete currentUser;
+                }
+                break;
+            }
+            case 3: {
+                User* newUser = auth.signUp();
+                if (newUser) {
+                    userMenu(*newUser, ex, auth, limitManager);
+                    delete newUser;
+                }
+                break;
+            }
+            default:
+                std::cout << "Invalid choice.\n";
+        }
+    }
+
+    saveCryptoData(ex);
+    std::cout << "Crypto market data saved. Goodbye!\n";
+    return 0; 
+}
