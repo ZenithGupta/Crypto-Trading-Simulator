@@ -7,6 +7,9 @@
 #include <iomanip>
 #include <limits>
 #include <algorithm>
+#include <utility> // for std::pair
+
+using namespace std;
 
 class User;
 class Exchange;
@@ -26,6 +29,11 @@ public:
     const std::string& getSymbol() const;
     double getPrice() const;
     void setPrice(double newPrice);
+
+    bool operator==(const Crypto_currency& other) const { return symbol == other.symbol; }
+    bool operator!=(const Crypto_currency& other) const { return !(*this == other); }
+
+    friend std::ostream& operator<<(std::ostream& os, const Crypto_currency& c);
 };
 
 Crypto_currency::Crypto_currency(const std::string& name, const std::string& symbol, double price)
@@ -36,14 +44,19 @@ const std::string& Crypto_currency::getSymbol() const { return symbol; }
 double Crypto_currency::getPrice() const { return price; }
 void Crypto_currency::setPrice(double newPrice) { price = newPrice; }
 
+inline std::ostream& operator<<(std::ostream& os, const Crypto_currency& c) {
+    os << c.getSymbol() << " (" << c.getName() << ") $" << std::fixed << std::setprecision(2) << c.getPrice();
+    return os;
+}
+
 class Wallet {
 private:
     double cashBalance;
     std::map<std::string, double> holdings;
 
 public:
-    Wallet();
-    explicit Wallet(double initialCash);
+    Wallet() : cashBalance(0.0) {}
+    explicit Wallet(double initialCash) : cashBalance(initialCash) {}
 
     double getCash() const;
     void deposit(double amount);
@@ -55,10 +68,18 @@ public:
 
     void print() const;
     const std::map<std::string, double>& getHoldings() const;
-};
 
-Wallet::Wallet() : cashBalance(0.0) {}
-Wallet::Wallet(double initialCash) : cashBalance(initialCash) {}
+    Wallet& operator+=(double amount) { deposit(amount); return *this; }
+    Wallet& operator-=(double amount) { withdraw(amount); return *this; }
+
+    Wallet& operator+=(const std::pair<std::string,double>& asset) { addQty(asset.first, asset.second); return *this; }
+    Wallet& operator-=(const std::pair<std::string,double>& asset) { removeQty(asset.first, asset.second); return *this; }
+
+    bool operator==(const Wallet& other) const { return cashBalance == other.cashBalance && holdings == other.holdings; }
+    bool operator!=(const Wallet& other) const { return !(*this == other); }
+
+    friend std::ostream& operator<<(std::ostream& os, const Wallet& w);
+};
 
 double Wallet::getCash() const { return cashBalance; }
 
@@ -90,7 +111,7 @@ void Wallet::addQty(const std::string& symbol, double units) {
 bool Wallet::removeQty(const std::string& symbol, double units) {
     if (units > 0 && getQty(symbol) >= units) {
         holdings[symbol] -= units;
-        if (holdings[symbol] < 1e-9) { 
+        if (holdings[symbol] < 1e-9) {
             holdings.erase(symbol);
         }
         return true;
@@ -112,6 +133,18 @@ void Wallet::print() const {
 
 const std::map<std::string, double>& Wallet::getHoldings() const { return holdings; }
 
+inline std::ostream& operator<<(std::ostream& os, const Wallet& w) {
+    os << "Cash: $" << std::fixed << std::setprecision(2) << w.cashBalance << "\nHoldings:\n";
+    if (w.holdings.empty()) {
+        os << "  No holdings yet.\n";
+    } else {
+        for (const auto& h : w.holdings) {
+            os << "  " << h.first << ": " << h.second << " units\n";
+        }
+    }
+    return os;
+}
+
 class User {
 private:
     std::string name;
@@ -124,6 +157,8 @@ public:
     Wallet& getWallet();
     const Wallet& getWallet() const;
     void printSummary() const;
+
+    friend std::ostream& operator<<(std::ostream& os, const User& u);
 };
 
 User::User(const std::string& name, double cash) : name(name), wallet(cash) {}
@@ -136,6 +171,14 @@ void User::printSummary() const {
     std::cout << "Welcome, " << name << "!\n";
     wallet.print();
     std::cout << "----------------------\n";
+}
+
+inline std::ostream& operator<<(std::ostream& os, const User& u) {
+    os << "--- User Portfolio ---\n";
+    os << "User: " << u.name << "\n";
+    os << u.wallet;
+    os << "----------------------\n";
+    return os;
 }
 
 class Exchange {
@@ -185,7 +228,6 @@ void Exchange::print() const {
 }
 
 const std::vector<Crypto_currency>& Exchange::getListings() const { return listings; }
-
 
 class Trade {
 protected:
@@ -249,6 +291,7 @@ bool SellTrade::execute(User& user, Exchange& ex) {
     std::cout << "SUCCESS: Sold " << units << " " << symbol << " for $" << std::fixed << std::setprecision(2) << earnings << "\n";
     return true;
 }
+
 class AuthManager {
 private:
     const std::string user_file = "users.txt";
@@ -261,21 +304,17 @@ public:
     User* loadUserData(const std::string& username) const;
 };
 
+// Use a simple deterministic hash (djb2) that returns unsigned long
 unsigned long AuthManager::simpleHash(const std::string& str) const {
     unsigned long hash = 5381;
-    for (char c : str) {
-        hash = ((hash << 5) + hash) + c;
+    for (unsigned char c : str) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
     }
     return hash;
 }
 
 User* AuthManager::login() {
     std::string username, password;
-    std::cout << "--- User Login ---\n";
-    std::cout << "Enter username: ";
-    std::cin >> username;
-    std::cout << "Enter password: ";
-    std::cin >> password;
 
     std::ifstream file(user_file);
     if (!file) {
@@ -283,8 +322,34 @@ User* AuthManager::login() {
         return nullptr;
     }
 
+    std::cout << "--- User Login ---\n";
+    std::cout << "Enter username: ";
+    std::cin >> username;
+    std::cout << "Enter password: ";
+    std::cout << "if forgot password write 1:";
+    std::cin >> password;
+
+    // If user entered "1", show stored hash (minimal "forgot" behavior).
+    if (password == "1") {
+        file.clear();
+        file.seekg(0);
+        std::string line;
+        while (std::getline(file, line)) {
+            std::stringstream ss(line);
+            std::string stored_user;
+            unsigned long stored_hash;
+            ss >> stored_user >> stored_hash;
+            if (username == stored_user) {
+                std::cout << "Stored password hash for user '" << username << "': " << stored_hash << "\n";
+                break;
+            }
+        }
+        return nullptr;
+    }
+
     std::string line;
     while (std::getline(file, line)) {
+        if (line.empty()) continue;
         std::stringstream ss(line);
         std::string stored_user;
         unsigned long stored_hash;
@@ -313,6 +378,7 @@ User* AuthManager::signUp() {
     if (infile) {
         std::string line;
         while (std::getline(infile, line)) {
+            if (line.empty()) continue;
             std::stringstream ss(line);
             std::string stored_user;
             ss >> stored_user;
@@ -324,8 +390,12 @@ User* AuthManager::signUp() {
     }
     infile.close();
 
-    std::cout << "Choose a password: ";
+    std::cout << "Choose a password: \n Password should contain atleast size of 5 having character and digit\n";
     std::cin >> password;
+    if (password.size() < 5) {
+        std::cout << "Not a valid password\n";
+        return nullptr;
+    }
 
     std::ofstream outfile(user_file, std::ios::app);
     if (!outfile) {
@@ -333,7 +403,7 @@ User* AuthManager::signUp() {
         return nullptr;
     }
     outfile << username << " " << simpleHash(password) << std::endl;
-    
+
     std::cout << "Sign up successful! Welcome, " << username << ".\n";
     User* newUser = new User(username, 10000.0);
     saveUserData(*newUser);
@@ -347,7 +417,7 @@ void AuthManager::saveUserData(const User& user) const {
          std::cerr << "Error: Could not save user data for " << user.getName() << std::endl;
          return;
     }
-    
+
     file << user.getWallet().getCash() << std::endl;
     for (const auto& holding : user.getWallet().getHoldings()) {
         file << holding.first << "," << holding.second << std::endl;
@@ -362,14 +432,15 @@ User* AuthManager::loadUserData(const std::string& username) const {
         saveUserData(*newUser);
         return newUser;
     }
-    
+
     double cash;
     file >> cash;
     User* user = new User(username, cash);
 
     std::string line;
     std::getline(file, line); // Consume rest of the first line
-    while(std::getline(file, line)) {
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
         std::stringstream ss(line);
         std::string symbol;
         double units;
@@ -381,6 +452,7 @@ User* AuthManager::loadUserData(const std::string& username) const {
     }
     return user;
 }
+
 class LimitOrder {
 public:
     int orderId;
@@ -392,6 +464,8 @@ public:
 
     LimitOrder(int id, std::string uname, std::string sym, double u, double price, bool isBuy);
     void display() const;
+
+    friend std::ostream& operator<<(std::ostream& os, const LimitOrder& lo);
 };
 
 LimitOrder::LimitOrder(int id, std::string uname, std::string sym, double u, double price, bool isBuy)
@@ -403,6 +477,15 @@ void LimitOrder::display() const {
               << " | " << std::setw(5) << symbol
               << " | Units: " << std::setw(8) << std::fixed << std::setprecision(4) << units
               << " | Target Price: $" << std::setw(10) << std::fixed << std::setprecision(2) << desiredPrice << std::endl;
+}
+
+inline std::ostream& operator<<(std::ostream& os, const LimitOrder& lo) {
+    os << "ID: " << std::setw(4) << lo.orderId
+       << " | " << (lo.isBuyOrder ? "BUY " : "SELL")
+       << " | " << std::setw(5) << lo.symbol
+       << " | Units: " << std::setw(8) << std::fixed << std::setprecision(4) << lo.units
+       << " | Target Price: $" << std::setw(10) << std::fixed << std::setprecision(2) << lo.desiredPrice;
+    return os;
 }
 
 class LimitOrderManager {
@@ -488,7 +571,6 @@ void LimitOrderManager::displayUserOrders(const std::string& username) const {
         }
     }
     if (!found) std::cout << "You have no pending limit orders.\n";
-   
 }
 
 void LimitOrderManager::checkAndExecuteUserOrders(User& user, Exchange& ex) {
@@ -585,12 +667,13 @@ void loadCryptoData(Exchange& ex) {
 
     std::string line;
     while (std::getline(file, line)) {
+        if (line.empty()) continue;
         std::stringstream ss(line);
         std::string name, symbol, price_str;
         std::getline(ss, name, ',');
         std::getline(ss, symbol, ',');
         std::getline(ss, price_str);
-        if (!name.empty()) {
+        if (!name.empty() && !symbol.empty() && !price_str.empty()) {
             ex.add_crypto_listing(Crypto_currency(name, symbol, std::stod(price_str)));
         }
     }
@@ -624,7 +707,7 @@ void adminMenu(Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager)
                 double delta = p * (pct / 100.0);
                 crypto->setPrice(inc == 1 ? p + delta : p - delta);
                 std::cout << "[OK] " << sym << " is now $" << crypto->getPrice() << "\n";
-                
+
                 std::cout << "Checking all pending limit orders against new price...\n";
                 limitManager.checkAndExecuteAllOrders(ex, auth);
 
@@ -714,18 +797,17 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
     }
 }
 
-
 // --- Main Application ---
 int main() {
     Exchange ex;
     AuthManager auth;
     LimitOrderManager limitManager;
-    
+
     loadCryptoData(ex);
     if (ex.isListingsEmpty()) {
         seedExchange(ex);
     }
-    
+
     std::cout << "====== Crypto Trading Simulator ======\n";
 
     while (true) {
@@ -734,10 +816,20 @@ int main() {
                   << "2. User Login\n"
                   << "3. User Sign Up\n"
                   << "0. Exit\n> ";
-        int choice = getNumericInput<int>("");
+        int choice;
 
-        if (choice == 0) break;
-        
+        // -- validate numeric input --
+        if (!(std::cin >> choice)) {
+            std::cout << "Invalid input. Please enter a number.\n";
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            continue;
+        }
+
+        if (choice == 0) {
+            break;
+        }
+
         switch(choice) {
             case 1: {
                 std::string user, pass;
@@ -756,6 +848,7 @@ int main() {
                 User* currentUser = auth.login();
                 if (currentUser) {
                     userMenu(*currentUser, ex, auth, limitManager);
+                    // Do not delete here because save/load may expect files to remain usable.
                     delete currentUser;
                 }
                 break;
@@ -775,5 +868,5 @@ int main() {
 
     saveCryptoData(ex);
     std::cout << "Crypto market data saved. Goodbye!\n";
-    return 0; 
+    return 0;
 }
