@@ -8,6 +8,7 @@
 #include <limits>
 #include <algorithm>
 #include <utility> // for std::pair
+#include <stdexcept> // Required for standard exception types
 
 using namespace std;
 
@@ -316,53 +317,57 @@ unsigned long AuthManager::simpleHash(const std::string& str) const {
 User* AuthManager::login() {
     std::string username, password;
 
-    std::ifstream file(user_file);
-    if (!file) {
-        std::cout << "No users have signed up yet.\n";
-        return nullptr;
-    }
+    try {
+        std::ifstream file(user_file);
+        if (!file) {
+            std::cout << "No users have signed up yet.\n";
+            return nullptr;
+        }
 
-    std::cout << "--- User Login ---\n";
-    std::cout << "Enter username: ";
-    std::cin >> username;
-    std::cout << "Enter password: ";
-    std::cout << "if forgot password write 1:";
-    std::cin >> password;
+        std::cout << "--- User Login ---\n";
+        std::cout << "Enter username: ";
+        std::cin >> username;
+        std::cout << "Enter password: ";
+        std::cout << "if forgot password write 1:";
+        std::cin >> password;
 
-    // If user entered "1", show stored hash (minimal "forgot" behavior).
-    if (password == "1") {
-        file.clear();
-        file.seekg(0);
+        if (password == "1") {
+            file.clear();
+            file.seekg(0);
+            std::string line;
+            while (std::getline(file, line)) {
+                std::stringstream ss(line);
+                std::string stored_user;
+                unsigned long stored_hash;
+                ss >> stored_user >> stored_hash;
+                if (username == stored_user) {
+                    std::cout << "Stored password hash for user '" << username << "': " << stored_hash << "\n";
+                    break;
+                }
+            }
+            return nullptr;
+        }
+
         std::string line;
         while (std::getline(file, line)) {
+            if (line.empty()) continue;
             std::stringstream ss(line);
             std::string stored_user;
             unsigned long stored_hash;
             ss >> stored_user >> stored_hash;
             if (username == stored_user) {
-                std::cout << "Stored password hash for user '" << username << "': " << stored_hash << "\n";
-                break;
+                if (simpleHash(password) == stored_hash) {
+                    std::cout << "Login successful! Welcome, " << username << ".\n";
+                    return loadUserData(username);
+                } else {
+                    std::cout << "Invalid password.\n";
+                    return nullptr;
+                }
             }
         }
+    } catch (const std::ifstream::failure& e) {
+        std::cerr << "Exception opening/reading user file: " << e.what() << '\n';
         return nullptr;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::string stored_user;
-        unsigned long stored_hash;
-        ss >> stored_user >> stored_hash;
-        if (username == stored_user) {
-            if (simpleHash(password) == stored_hash) {
-                std::cout << "Login successful! Welcome, " << username << ".\n";
-                return loadUserData(username);
-            } else {
-                std::cout << "Invalid password.\n";
-                return nullptr;
-            }
-        }
     }
     std::cout << "User not found.\n";
     return nullptr;
@@ -374,84 +379,106 @@ User* AuthManager::signUp() {
     std::cout << "Choose a username: ";
     std::cin >> username;
 
-    std::ifstream infile(user_file);
-    if (infile) {
-        std::string line;
-        while (std::getline(infile, line)) {
-            if (line.empty()) continue;
-            std::stringstream ss(line);
-            std::string stored_user;
-            ss >> stored_user;
-            if (username == stored_user) {
-                std::cout << "Username already exists. Please try another.\n";
-                return nullptr;
+    try {
+        std::ifstream infile(user_file);
+        if (infile) {
+            std::string line;
+            while (std::getline(infile, line)) {
+                if (line.empty()) continue;
+                std::stringstream ss(line);
+                std::string stored_user;
+                ss >> stored_user;
+                if (username == stored_user) {
+                    std::cout << "Username already exists. Please try another.\n";
+                    return nullptr;
+                }
             }
         }
-    }
-    infile.close();
+        infile.close();
 
-    std::cout << "Choose a password: \n Password should contain atleast size of 5 having character and digit\n";
-    std::cin >> password;
-    if (password.size() < 5) {
-        std::cout << "Not a valid password\n";
+        std::cout << "Choose a password: \n Password should contain atleast size of 5 having character and digit\n";
+        std::cin >> password;
+        if (password.size() < 5) {
+            std::cout << "Not a valid password\n";
+            return nullptr;
+        }
+
+        std::ofstream outfile(user_file, std::ios::app);
+        if (!outfile) {
+            std::cerr << "Error: Could not open user file for writing.\n";
+            return nullptr;
+        }
+        outfile << username << " " << simpleHash(password) << std::endl;
+
+        std::cout << "Sign up successful! Welcome, " << username << ".\n";
+        User* newUser = new User(username, 10000.0);
+        saveUserData(*newUser);
+        return newUser;
+    } catch (const std::ios_base::failure& e) {
+        std::cerr << "Exception handling user file: " << e.what() << '\n';
         return nullptr;
     }
-
-    std::ofstream outfile(user_file, std::ios::app);
-    if (!outfile) {
-        std::cerr << "Error: Could not open user file for writing.\n";
+     catch (const std::bad_alloc& e) {
+        std::cerr << "Memory allocation failed: " << e.what() << '\n';
         return nullptr;
     }
-    outfile << username << " " << simpleHash(password) << std::endl;
-
-    std::cout << "Sign up successful! Welcome, " << username << ".\n";
-    User* newUser = new User(username, 10000.0);
-    saveUserData(*newUser);
-    return newUser;
 }
 
 void AuthManager::saveUserData(const User& user) const {
     std::string filename = user.getName() + "_wallet.csv";
-    std::ofstream file(filename);
-    if (!file) {
-         std::cerr << "Error: Could not save user data for " << user.getName() << std::endl;
-         return;
-    }
+    try {
+        std::ofstream file(filename);
+        if (!file) {
+             std::cerr << "Error: Could not save user data for " << user.getName() << std::endl;
+             return;
+        }
 
-    file << user.getWallet().getCash() << std::endl;
-    for (const auto& holding : user.getWallet().getHoldings()) {
-        file << holding.first << "," << holding.second << std::endl;
+        file << user.getWallet().getCash() << std::endl;
+        for (const auto& holding : user.getWallet().getHoldings()) {
+            file << holding.first << "," << holding.second << std::endl;
+        }
+    } catch (const std::ofstream::failure& e) {
+        std::cerr << "Exception writing to user wallet file: " << e.what() << '\n';
     }
 }
 
 User* AuthManager::loadUserData(const std::string& username) const {
     std::string filename = username + "_wallet.csv";
-    std::ifstream file(filename);
-    if (!file) {
-        User* newUser = new User(username, 10000.0);
-        saveUserData(*newUser);
-        return newUser;
-    }
-
-    double cash;
-    file >> cash;
-    User* user = new User(username, cash);
-
-    std::string line;
-    std::getline(file, line); // Consume rest of the first line
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::string symbol;
-        double units;
-        std::getline(ss, symbol, ',');
-        ss >> units;
-        if (!symbol.empty()) {
-            user->getWallet().addQty(symbol, units);
+    try {
+        std::ifstream file(filename);
+        if (!file) {
+            User* newUser = new User(username, 10000.0);
+            saveUserData(*newUser);
+            return newUser;
         }
+
+        double cash;
+        file >> cash;
+        User* user = new User(username, cash);
+
+        std::string line;
+        std::getline(file, line); // Consume rest of the first line
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+            std::stringstream ss(line);
+            std::string symbol;
+            double units;
+            std::getline(ss, symbol, ',');
+            ss >> units;
+            if (!symbol.empty()) {
+                user->getWallet().addQty(symbol, units);
+            }
+        }
+        return user;
+    } catch (const std::ifstream::failure& e) {
+        std::cerr << "Exception reading user wallet file: " << e.what() << '\n';
+        return nullptr;
+    } catch (const std::bad_alloc& e) {
+        std::cerr << "Memory allocation failed: " << e.what() << '\n';
+        return nullptr;
     }
-    return user;
 }
+
 
 class LimitOrder {
 public:
@@ -513,52 +540,80 @@ public:
 int LimitOrderManager::nextOrderId = 1;
 
 LimitOrderManager::LimitOrderManager() {
-    loadNextOrderId();
-    loadOrders();
+    try {
+        loadNextOrderId();
+        loadOrders();
+    } catch (const std::exception& e) {
+        std::cerr << "Error during LimitOrderManager initialization: " << e.what() << '\n';
+    }
 }
 
 LimitOrderManager::~LimitOrderManager() {
-    saveNextOrderId();
+    try {
+        saveNextOrderId();
+    } catch (const std::exception& e) {
+        std::cerr << "Error during LimitOrderManager destruction: " << e.what() << '\n';
+    }
 }
 
 void LimitOrderManager::loadNextOrderId() {
-    std::ifstream idFile(id_filename);
-    if (idFile) idFile >> nextOrderId;
-    if (nextOrderId == 0) nextOrderId = 1;
+    try {
+        std::ifstream idFile(id_filename);
+        if (idFile) idFile >> nextOrderId;
+        if (nextOrderId == 0) nextOrderId = 1;
+    } catch (const std::ifstream::failure& e) {
+        std::cerr << "Exception loading next order ID: " << e.what() << '\n';
+    }
 }
 
 void LimitOrderManager::saveNextOrderId() const {
-    std::ofstream idFile(id_filename);
-    if (idFile) idFile << nextOrderId;
+    try {
+        std::ofstream idFile(id_filename);
+        if (idFile) idFile << nextOrderId;
+    } catch (const std::ofstream::failure& e) {
+        std::cerr << "Exception saving next order ID: " << e.what() << '\n';
+    }
 }
 
 void LimitOrderManager::loadOrders() {
     orders.clear();
-    std::ifstream file(filename);
-    if (!file) return;
+    try {
+        std::ifstream file(filename);
+        if (!file) return;
 
-    int id, isBuyInt;
-    std::string username, symbol;
-    double units, price;
-    while (file >> id >> username >> symbol >> units >> price >> isBuyInt) {
-        orders.emplace_back(id, username, symbol, units, price, (isBuyInt == 1));
+        int id, isBuyInt;
+        std::string username, symbol;
+        double units, price;
+        while (file >> id >> username >> symbol >> units >> price >> isBuyInt) {
+            orders.emplace_back(id, username, symbol, units, price, (isBuyInt == 1));
+        }
+    } catch (const std::ifstream::failure& e) {
+        std::cerr << "Exception loading limit orders: " << e.what() << '\n';
     }
 }
 
 void LimitOrderManager::saveOrders() const {
-    std::ofstream file(filename);
-    if (!file) return;
+    try {
+        std::ofstream file(filename);
+        if (!file) return;
 
-    for (const auto& order : orders) {
-        file << order.orderId << " " << order.username << " " << order.symbol << " "
-             << order.units << " " << order.desiredPrice << " " << (order.isBuyOrder ? 1 : 0) << std::endl;
+        for (const auto& order : orders) {
+            file << order.orderId << " " << order.username << " " << order.symbol << " "
+                 << order.units << " " << order.desiredPrice << " " << (order.isBuyOrder ? 1 : 0) << std::endl;
+        }
+    } catch (const std::ofstream::failure& e) {
+        std::cerr << "Exception saving limit orders: " << e.what() << '\n';
     }
 }
 
 void LimitOrderManager::addOrder(const std::string& username, const std::string& symbol, double units, double price, bool isBuy) {
-    orders.emplace_back(nextOrderId++, username, symbol, units, price, isBuy);
-    saveOrders();
-    std::cout << "Limit order placed successfully.\n";
+    try {
+        orders.emplace_back(nextOrderId++, username, symbol, units, price, isBuy);
+        saveOrders();
+        std::cout << "Limit order placed successfully.\n";
+    } catch (const std::bad_alloc& e) {
+        std::cerr << "Memory allocation failed for new order: " << e.what() << '\n';
+    }
 }
 
 void LimitOrderManager::displayUserOrders(const std::string& username) const {
@@ -575,64 +630,72 @@ void LimitOrderManager::displayUserOrders(const std::string& username) const {
 
 void LimitOrderManager::checkAndExecuteUserOrders(User& user, Exchange& ex) {
     bool ordersChanged = false;
-    auto it = std::remove_if(orders.begin(), orders.end(), [&](LimitOrder& order) {
-        if (order.username != user.getName()) return false;
+    try {
+        auto it = std::remove_if(orders.begin(), orders.end(), [&](LimitOrder& order) {
+            if (order.username != user.getName()) return false;
 
-        double currentPrice = ex.priceOf(order.symbol);
-        if (currentPrice < 0) return false;
+            double currentPrice = ex.priceOf(order.symbol);
+            if (currentPrice < 0) return false;
 
-        bool shouldExecute = (order.isBuyOrder && currentPrice <= order.desiredPrice) ||
-                             (!order.isBuyOrder && currentPrice >= order.desiredPrice);
+            bool shouldExecute = (order.isBuyOrder && currentPrice <= order.desiredPrice) ||
+                                 (!order.isBuyOrder && currentPrice >= order.desiredPrice);
 
-        if (shouldExecute) {
-            std::cout << "\n[!] EXECUTING YOUR LIMIT ORDER ID: " << order.orderId << std::endl;
-            bool success = order.isBuyOrder ? BuyTrade(order.symbol, order.units).execute(user, ex)
-                                            : SellTrade(order.symbol, order.units).execute(user, ex);
-            if (success) ordersChanged = true;
-            else std::cout << "[!] Limit Order ID " << order.orderId << " failed (insufficient funds/units).\n";
-            return success;
+            if (shouldExecute) {
+                std::cout << "\n[!] EXECUTING YOUR LIMIT ORDER ID: " << order.orderId << std::endl;
+                bool success = order.isBuyOrder ? BuyTrade(order.symbol, order.units).execute(user, ex)
+                                                : SellTrade(order.symbol, order.units).execute(user, ex);
+                if (success) ordersChanged = true;
+                else std::cout << "[!] Limit Order ID " << order.orderId << " failed (insufficient funds/units).\n";
+                return success;
+            }
+            return false;
+        });
+
+        if (ordersChanged) {
+            orders.erase(it, orders.end());
+            saveOrders();
         }
-        return false;
-    });
-
-    if (ordersChanged) {
-        orders.erase(it, orders.end());
-        saveOrders();
+    } catch (const std::exception& e) {
+        std::cerr << "An unexpected error occurred while checking user orders: " << e.what() << '\n';
     }
 }
 
 void LimitOrderManager::checkAndExecuteAllOrders(Exchange& ex, AuthManager& auth) {
     bool ordersChanged = false;
-    auto it = std::remove_if(orders.begin(), orders.end(), [&](LimitOrder& order) {
-        double currentPrice = ex.priceOf(order.symbol);
-        if (currentPrice < 0) return false;
+    try {
+        auto it = std::remove_if(orders.begin(), orders.end(), [&](LimitOrder& order) {
+            double currentPrice = ex.priceOf(order.symbol);
+            if (currentPrice < 0) return false;
 
-        bool shouldExecute = (order.isBuyOrder && currentPrice <= order.desiredPrice) ||
-                             (!order.isBuyOrder && currentPrice >= order.desiredPrice);
+            bool shouldExecute = (order.isBuyOrder && currentPrice <= order.desiredPrice) ||
+                                 (!order.isBuyOrder && currentPrice >= order.desiredPrice);
 
-        if (shouldExecute) {
-            User* owner = auth.loadUserData(order.username);
-            if (!owner) return false;
+            if (shouldExecute) {
+                User* owner = auth.loadUserData(order.username);
+                if (!owner) return false;
 
-            std::cout << "\n[!] EXECUTING GLOBAL LIMIT ORDER ID: " << order.orderId << " for user " << order.username << std::endl;
-            bool success = order.isBuyOrder ? BuyTrade(order.symbol, order.units).execute(*owner, ex)
-                                            : SellTrade(order.symbol, order.units).execute(*owner, ex);
+                std::cout << "\n[!] EXECUTING GLOBAL LIMIT ORDER ID: " << order.orderId << " for user " << order.username << std::endl;
+                bool success = order.isBuyOrder ? BuyTrade(order.symbol, order.units).execute(*owner, ex)
+                                                : SellTrade(order.symbol, order.units).execute(*owner, ex);
 
-            if (success) {
-                auth.saveUserData(*owner);
-                ordersChanged = true;
-            } else {
-                std::cout << "[!] Global Limit Order ID " << order.orderId << " failed.\n";
+                if (success) {
+                    auth.saveUserData(*owner);
+                    ordersChanged = true;
+                } else {
+                    std::cout << "[!] Global Limit Order ID " << order.orderId << " failed.\n";
+                }
+                delete owner;
+                return success;
             }
-            delete owner;
-            return success;
-        }
-        return false;
-    });
+            return false;
+        });
 
-    if (ordersChanged) {
-        orders.erase(it, orders.end());
-        saveOrders();
+        if (ordersChanged) {
+            orders.erase(it, orders.end());
+            saveOrders();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "An unexpected error occurred while checking all orders: " << e.what() << '\n';
     }
 }
 
@@ -653,29 +716,43 @@ T getNumericInput(const std::string& prompt) {
 }
 
 void saveCryptoData(const Exchange& ex) {
-    std::ofstream file("crypto_data.csv");
-    if (!file) return;
+    try {
+        std::ofstream file("crypto_data.csv");
+        if (!file) return;
 
-    for (const auto& crypto : ex.getListings()) {
-        file << crypto.getName() << "," << crypto.getSymbol() << "," << crypto.getPrice() << std::endl;
+        for (const auto& crypto : ex.getListings()) {
+            file << crypto.getName() << "," << crypto.getSymbol() << "," << crypto.getPrice() << std::endl;
+        }
+    } catch (const std::ofstream::failure& e) {
+        std::cerr << "Exception writing to crypto data file: " << e.what() << '\n';
     }
 }
 
 void loadCryptoData(Exchange& ex) {
-    std::ifstream file("crypto_data.csv");
-    if (!file) return;
+    try {
+        std::ifstream file("crypto_data.csv");
+        if (!file) return;
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::string name, symbol, price_str;
-        std::getline(ss, name, ',');
-        std::getline(ss, symbol, ',');
-        std::getline(ss, price_str);
-        if (!name.empty() && !symbol.empty() && !price_str.empty()) {
-            ex.add_crypto_listing(Crypto_currency(name, symbol, std::stod(price_str)));
+        std::string line;
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+            std::stringstream ss(line);
+            std::string name, symbol, price_str;
+            std::getline(ss, name, ',');
+            std::getline(ss, symbol, ',');
+            std::getline(ss, price_str);
+            if (!name.empty() && !symbol.empty() && !price_str.empty()) {
+                try {
+                    ex.add_crypto_listing(Crypto_currency(name, symbol, std::stod(price_str)));
+                } catch (const std::invalid_argument& ia) {
+                    std::cerr << "Invalid argument: " << ia.what() << " for price: " << price_str << '\n';
+                } catch (const std::out_of_range& oor) {
+                    std::cerr << "Out of Range error: " << oor.what() << " for price: " << price_str << '\n';
+                }
+            }
         }
+    } catch (const std::ifstream::failure& e) {
+        std::cerr << "Exception reading crypto data file: " << e.what() << '\n';
     }
 }
 
@@ -722,151 +799,158 @@ void adminMenu(Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager)
 
 void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager) {
     while (true) {
-        limitManager.checkAndExecuteUserOrders(user, ex);
+        try {
+            limitManager.checkAndExecuteUserOrders(user, ex);
 
-        std::cout << "\n=========== USER MENU ============\n"
-                  << "1) List Market\n"
-                  << "2) View Portfolio\n"
-                  << "3) Deposit Funds\n"
-                  << "4) Buy Crypto (Market Order)\n"
-                  << "5) Sell Crypto (Market Order)\n"
-                  << "6) Place Limit Order\n"
-                  << "7) View My Limit Orders\n"
-                  << "0) Save & Logout\n> ";
-        int choice = getNumericInput<int>("");
+            std::cout << "\n=========== USER MENU ============\n"
+                      << "1) List Market\n"
+                      << "2) View Portfolio\n"
+                      << "3) Deposit Funds\n"
+                      << "4) Buy Crypto (Market Order)\n"
+                      << "5) Sell Crypto (Market Order)\n"
+                      << "6) Place Limit Order\n"
+                      << "7) View My Limit Orders\n"
+                      << "0) Save & Logout\n> ";
+            int choice = getNumericInput<int>("");
 
-        if (choice == 0) {
-            auth.saveUserData(user);
-            std::cout << "Data saved. Logging out.\n";
-            break;
-        }
-
-        switch (choice) {
-            case 1: ex.print(); break;
-            case 2: user.printSummary(); break;
-            case 3: {
-                double amt = getNumericInput<double>("Enter amount to deposit: ");
-                user.getWallet().deposit(amt);
-                std::cout << "[OK] Deposited. New cash: $" << user.getWallet().getCash() << "\n";
+            if (choice == 0) {
+                auth.saveUserData(user);
+                std::cout << "Data saved. Logging out.\n";
                 break;
             }
-            case 4: {
-                std::string sym;
-                std::cout << "Enter symbol to BUY (e.g., ETH): ";
-                std::cin >> sym;
-                double units = getNumericInput<double>("Enter units to buy: ");
-                BuyTrade(sym, units).execute(user, ex);
-                break;
-            }
-            case 5: {
-                std::string sym;
-                std::cout << "Enter symbol to SELL (e.g., ETH): ";
-                std::cin >> sym;
-                double units = getNumericInput<double>("Enter units to sell: ");
-                SellTrade(sym, units).execute(user, ex);
-                break;
-            }
-            case 6: {
-                std::string sym;
-                std::cout << "Place a new Limit Order\n";
-                std::cout << "Enter symbol (e.g., BTC): ";
-                std::cin >> sym;
 
-                if (ex.find(sym) == nullptr) {
-                    std::cout << "Error: Symbol '" << sym << "' is not listed on the market.\n";
-                    continue;
+            switch (choice) {
+                case 1: ex.print(); break;
+                case 2: user.printSummary(); break;
+                case 3: {
+                    double amt = getNumericInput<double>("Enter amount to deposit: ");
+                    user.getWallet().deposit(amt);
+                    std::cout << "[OK] Deposited. New cash: $" << user.getWallet().getCash() << "\n";
+                    break;
                 }
-                double units = getNumericInput<double>("Enter units: ");
-                double price = getNumericInput<double>("Enter target price: $");
-                int type = getNumericInput<int>("Is this a BUY or SELL order? (1 for Buy, 2 for Sell): ");
-
-                if (type == 1 || type == 2) {
-                    limitManager.addOrder(user.getName(), sym, units, price, (type == 1));
-                } else {
-                    std::cout << "Invalid order type.\n";
+                case 4: {
+                    std::string sym;
+                    std::cout << "Enter symbol to BUY (e.g., ETH): ";
+                    std::cin >> sym;
+                    double units = getNumericInput<double>("Enter units to buy: ");
+                    BuyTrade(sym, units).execute(user, ex);
+                    break;
                 }
-                break;
+                case 5: {
+                    std::string sym;
+                    std::cout << "Enter symbol to SELL (e.g., ETH): ";
+                    std::cin >> sym;
+                    double units = getNumericInput<double>("Enter units to sell: ");
+                    SellTrade(sym, units).execute(user, ex);
+                    break;
+                }
+                case 6: {
+                    std::string sym;
+                    std::cout << "Place a new Limit Order\n";
+                    std::cout << "Enter symbol (e.g., BTC): ";
+                    std::cin >> sym;
+
+                    if (ex.find(sym) == nullptr) {
+                        std::cout << "Error: Symbol '" << sym << "' is not listed on the market.\n";
+                        continue;
+                    }
+                    double units = getNumericInput<double>("Enter units: ");
+                    double price = getNumericInput<double>("Enter target price: $");
+                    int type = getNumericInput<int>("Is this a BUY or SELL order? (1 for Buy, 2 for Sell): ");
+
+                    if (type == 1 || type == 2) {
+                        limitManager.addOrder(user.getName(), sym, units, price, (type == 1));
+                    } else {
+                        std::cout << "Invalid order type.\n";
+                    }
+                    break;
+                }
+                case 7: {
+                    limitManager.displayUserOrders(user.getName());
+                    break;
+                }
+                default:
+                    std::cout << "Unknown option.\n";
             }
-            case 7: {
-                limitManager.displayUserOrders(user.getName());
-                break;
-            }
-            default:
-                std::cout << "Unknown option.\n";
+        } catch (const std::exception& e) {
+            std::cerr << "An error occurred in the user menu: " << e.what() << '\n';
+            clearInput(); // Clear any bad input
         }
     }
 }
 
 // --- Main Application ---
 int main() {
-    Exchange ex;
-    AuthManager auth;
-    LimitOrderManager limitManager;
+    try {
+        Exchange ex;
+        AuthManager auth;
+        LimitOrderManager limitManager;
 
-    loadCryptoData(ex);
-    if (ex.isListingsEmpty()) {
-        seedExchange(ex);
+        loadCryptoData(ex);
+        if (ex.isListingsEmpty()) {
+            seedExchange(ex);
+        }
+
+        std::cout << "====== Crypto Trading Simulator ======\n";
+
+        while (true) {
+            std::cout << "\n--- Welcome ---\n"
+                      << "1. Admin Login\n"
+                      << "2. User Login\n"
+                      << "3. User Sign Up\n"
+                      << "0. Exit\n> ";
+            int choice;
+
+            if (!(std::cin >> choice)) {
+                std::cout << "Invalid input. Please enter a number.\n";
+                clearInput();
+                continue;
+            }
+
+            if (choice == 0) {
+                break;
+            }
+
+            switch(choice) {
+                case 1: {
+                    std::string user, pass;
+                    std::cout << "--- Admin Login ---\n";
+                    std::cout << "Username: "; std::cin >> user;
+                    std::cout << "Password: "; std::cin >> pass;
+                    if (user == "admin" && pass == "letmein") {
+                        std::cout << "Admin login successful.\n";
+                        adminMenu(ex, auth, limitManager);
+                    } else {
+                        std::cout << "Invalid admin credentials.\n";
+                    }
+                    break;
+                }
+                case 2: {
+                    User* currentUser = auth.login();
+                    if (currentUser) {
+                        userMenu(*currentUser, ex, auth, limitManager);
+                        delete currentUser;
+                    }
+                    break;
+                }
+                case 3: {
+                    User* newUser = auth.signUp();
+                    if (newUser) {
+                        userMenu(*newUser, ex, auth, limitManager);
+                        delete newUser;
+                    }
+                    break;
+                }
+                default:
+                    std::cout << "Invalid choice.\n";
+            }
+        }
+
+        saveCryptoData(ex);
+        std::cout << "Crypto market data saved. Goodbye!\n";
+    } catch (const std::exception& e) {
+        std::cerr << "A critical error occurred: " << e.what() << std::endl;
+        return 1;
     }
-
-    std::cout << "====== Crypto Trading Simulator ======\n";
-
-    while (true) {
-        std::cout << "\n--- Welcome ---\n"
-                  << "1. Admin Login\n"
-                  << "2. User Login\n"
-                  << "3. User Sign Up\n"
-                  << "0. Exit\n> ";
-        int choice;
-
-        // -- validate numeric input --
-        if (!(std::cin >> choice)) {
-            std::cout << "Invalid input. Please enter a number.\n";
-            std::cin.clear();
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-            continue;
-        }
-
-        if (choice == 0) {
-            break;
-        }
-
-        switch(choice) {
-            case 1: {
-                std::string user, pass;
-                std::cout << "--- Admin Login ---\n";
-                std::cout << "Username: "; std::cin >> user;
-                std::cout << "Password: "; std::cin >> pass;
-                if (user == "admin" && pass == "letmein") {
-                    std::cout << "Admin login successful.\n";
-                    adminMenu(ex, auth, limitManager);
-                } else {
-                    std::cout << "Invalid admin credentials.\n";
-                }
-                break;
-            }
-            case 2: {
-                User* currentUser = auth.login();
-                if (currentUser) {
-                    userMenu(*currentUser, ex, auth, limitManager);
-                    // Do not delete here because save/load may expect files to remain usable.
-                    delete currentUser;
-                }
-                break;
-            }
-            case 3: {
-                User* newUser = auth.signUp();
-                if (newUser) {
-                    userMenu(*newUser, ex, auth, limitManager);
-                    delete newUser;
-                }
-                break;
-            }
-            default:
-                std::cout << "Invalid choice.\n";
-        }
-    }
-
-    saveCryptoData(ex);
-    std::cout << "Crypto market data saved. Goodbye!\n";
     return 0;
 }
