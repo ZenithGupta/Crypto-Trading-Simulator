@@ -10,12 +10,31 @@
 #include <utility> // for std::pair
 #include <stdexcept> // Required for standard exception types
 
+// --- NEW ADDITION ---
+#include <curl/curl.h> // For making HTTP requests
+#include "json.hpp"    // For parsing JSON (make sure json.hpp is in your project)
+#include <chrono>   // For std::this_thread::sleep_for
+#include <thread>   // For std::this_thread
+// --- END NEW ADDITION ---
+
 using namespace std;
+
+// --- NEW ADDITION ---
+using json = nlohmann::json; // Alias for nlohmann::json
+// --- END NEW ADDITION ---
 
 class User;
 class Exchange;
 class AuthManager;
 class LimitOrderManager;
+
+// --- NEW ADDITION ---
+// Callback function to write cURL response data into a string
+static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+// --- END NEW ADDITION ---
 
 class Crypto_currency {
 private:
@@ -762,54 +781,211 @@ void seedExchange(Exchange& ex) {
     ex.add_crypto_listing(Crypto_currency("Solana", "SOL", 150.0));
 }
 
+// --- NEW ADDITION ---
+// Function to update crypto prices from CoinGecko API
+void updateCryptoPricesFromAPI(Exchange& ex) {
+    CURL *curl;
+    CURLcode res;
+    std::string readBuffer;
+    std::string apiUrl = "https://api.coingecko.com/api/v3/simple/price?ids=";
+    std::string idsParam;
+
+    // Map your exchange's symbols (BTC, ETH) to CoinGecko's IDs (bitcoin, ethereum)
+    // IMPORTANT: You MUST update this map if you add more cryptos
+    std::map<std::string, std::string> symbolToIdMap = {
+        {"BTC", "bitcoin"},
+        {"ETH", "ethereum"},
+        {"SOL", "solana"}
+    };
+
+    const auto& listings = ex.getListings();
+    if (listings.empty()) {
+        std::cout << "[API] No listings found in exchange to update prices for." << std::endl;
+        return;
+    }
+
+    // Build the 'ids' parameter for the API call (e.g., "bitcoin%2Cethereum%2Csolana")
+    for (size_t i = 0; i < listings.size(); ++i) {
+        auto it = symbolToIdMap.find(listings[i].getSymbol());
+        if (it != symbolToIdMap.end()) {
+            idsParam += it->second; // Use CoinGecko ID
+            if (i < listings.size() - 1) {
+                 idsParam += "%2C"; // URL encoded comma
+            }
+        } else {
+            std::cout << "[API Warning] No CoinGecko ID found for symbol: " << listings[i].getSymbol() << std::endl;
+        }
+    }
+    
+    // Remove trailing %2C if it exists
+    if (!idsParam.empty() && idsParam.length() >= 3 && idsParam.substr(idsParam.length() - 3) == "%2C") {
+        idsParam.erase(idsParam.length() - 3);
+    }
+
+    if (idsParam.empty()) {
+        std::cout << "[API] No valid CoinGecko IDs found for listed symbols." << std::endl;
+        return;
+    }
+
+    apiUrl += idsParam + "&vs_currencies=usd";
+    // std::cout << "[API] Fetching live prices... (" << apiUrl << ")" << std::endl; // Commented out to reduce noise
+
+    curl_global_init(CURL_GLOBAL_ALL);
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, apiUrl.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0"); // Some APIs require a user agent
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L); // 10 seconds timeout
+
+        res = curl_easy_perform(curl);
+
+        if(res != CURLE_OK) {
+            std::cerr << "[API Error] curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+        } else {
+            long http_code = 0;
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+            
+            if (http_code == 200) {
+                try {
+                    json apiData = json::parse(readBuffer);
+
+                    // Reverse map for lookup: coingecko_id -> symbol
+                    std::map<std::string, std::string> idToSymbolMap;
+                    for(const auto& pair : symbolToIdMap) {
+                        idToSymbolMap[pair.second] = pair.first;
+                    }
+
+                    // Iterate through the received JSON
+                    for (auto it = apiData.begin(); it != apiData.end(); ++it) {
+                        std::string coingeckoId = it.key();
+                        if (it.value().contains("usd")) {
+                            double newPrice = it.value()["usd"].get<double>();
+
+                            auto symbolIt = idToSymbolMap.find(coingeckoId);
+                            if (symbolIt != idToSymbolMap.end()) {
+                                Crypto_currency* crypto = ex.find(symbolIt->second);
+                                if (crypto) {
+                                    // Only print if price changed noticeably
+                                    if (std::abs(crypto->getPrice() - newPrice) > 0.01) {
+                                       // std::cout << "[API Update] " << crypto->getSymbol() << " price set to $" << std::fixed << std::setprecision(2) << newPrice << std::endl;
+                                    }
+                                    crypto->setPrice(newPrice);
+                                }
+                            }
+                        }
+                    }
+                    // std::cout << "[API] Live prices updated successfully." << std::endl; // Commented out to reduce noise
+                } catch (json::parse_error& e) {
+                    std::cerr << "[API JSON Error] Failed to parse response: " << e.what() << std::endl;
+                     std::cerr << "Response was: " << readBuffer << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "[API Error] Error processing price data: " << e.what() << std::endl;
+                }
+            } else {
+                std::cerr << "[API HTTP Error] Received HTTP status code: " << http_code << std::endl;
+            }
+        }
+        curl_easy_cleanup(curl);
+    } else {
+        std::cerr << "[API Error] curl_easy_init() failed." << std::endl;
+    }
+    curl_global_cleanup();
+}
+// --- END NEW ADDITION ---
+
+
 void adminMenu(Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager) {
     while (true) {
         std::cout << "\n--- Admin Menu ---\n"
-                  << "1) Update Crypto Price\n"
+                  << "1) Update Crypto Price (Manual %)\n" 
+                  << "2) Fetch Live API Prices\n"          
                   << "0) Logout\n> ";
         int choice = getNumericInput<int>("");
 
         if (choice == 0) break;
 
-        if (choice == 1) {
-            std::string sym;
-            std::cout << "Update % for which symbol? ";
-            std::cin >> sym;
-            double pct = getNumericInput<double>("Percent change (+/-): ");
-            int inc = getNumericInput<int>("Increase? (1=yes, 0=no): ");
+        switch (choice) {
+            case 1: {
+                std::string sym;
+                std::cout << "Update % for which symbol? ";
+                std::cin >> sym;
+                double pct = getNumericInput<double>("Percent change (+/-): ");
+                int inc = getNumericInput<int>("Increase? (1=yes, 0=no): ");
 
-            Crypto_currency* crypto = ex.find(sym);
-            if (crypto) {
-                double p = crypto->getPrice();
-                double delta = p * (pct / 100.0);
-                crypto->setPrice(inc == 1 ? p + delta : p - delta);
-                std::cout << "[OK] " << sym << " is now $" << crypto->getPrice() << "\n";
+                Crypto_currency* crypto = ex.find(sym);
+                if (crypto) {
+                    double p = crypto->getPrice();
+                    double delta = p * (pct / 100.0);
+                    crypto->setPrice(inc == 1 ? p + delta : p - delta);
+                    std::cout << "[OK] " << sym << " is now $" << crypto->getPrice() << "\n";
 
-                std::cout << "Checking all pending limit orders against new price...\n";
-                limitManager.checkAndExecuteAllOrders(ex, auth);
+                    std::cout << "Checking all pending limit orders against new price...\n";
+                    limitManager.checkAndExecuteAllOrders(ex, auth);
 
-            } else {
-                std::cout << "[ERR] Symbol not found\n";
+                } else {
+                    std::cout << "[ERR] Symbol not found\n";
+                }
+                break;
             }
-        } else {
-            std::cout << "Unknown option.\n";
+            case 2: {
+                updateCryptoPricesFromAPI(ex);
+                std::cout << "Checking all pending limit orders against new API prices...\n";
+                limitManager.checkAndExecuteAllOrders(ex, auth);
+                break;
+            }
+            default: {
+                std::cout << "Unknown option.\n";
+            }
         }
     }
 }
 
+
+// --- NEW ADDITION ---
+// Helper function to clear the terminal screen
+void clearScreen() {
+#ifdef _WIN32
+    system("cls"); // For Windows
+#else
+    system("clear"); // For Linux/macOS
+#endif
+}
+// --- END NEW ADDITION ---
+
+
+// --- MODIFIED FUNCTION ---
+// This function is replaced with the new "live dashboard" version
 void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& limitManager) {
     while (true) {
         try {
-            limitManager.checkAndExecuteUserOrders(user, ex);
+            // This now acts as a "live dashboard" that refreshes
+            // every time the user returns to the menu.
+
+            clearScreen(); // 1. Clear the screen
+            
+            std::cout << "[!] Fetching latest market prices...\n";
+            updateCryptoPricesFromAPI(ex); // 2. Get live prices
+
+            std::cout << "-------------------------------\n";
+            
+            // 3. Check if any limit orders were triggered by new prices
+            limitManager.checkAndExecuteUserOrders(user, ex); 
+
+            ex.print(); // 4. Display the updated market
+            user.printSummary(); // 5. Display the user's portfolio
+
 
             std::cout << "\n=========== USER MENU ============\n"
-                      << "1) List Market\n"
-                      << "2) View Portfolio\n"
+                      << "1) List Market (Refreshed)\n"
+                      << "2) View Portfolio (Refreshed)\n"
                       << "3) Deposit Funds\n"
                       << "4) Buy Crypto (Market Order)\n"
                       << "5) Sell Crypto (Market Order)\n"
                       << "6) Place Limit Order\n"
                       << "7) View My Limit Orders\n"
+                      // Option 8 is removed as it's now automatic
                       << "0) Save & Logout\n> ";
             int choice = getNumericInput<int>("");
 
@@ -819,32 +995,51 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
                 break;
             }
 
+            // --- We add a clearScreen() before each action ---
+            // --- so the output is clean. ---
+
             switch (choice) {
-                case 1: ex.print(); break;
-                case 2: user.printSummary(); break;
+                case 1: 
+                    clearScreen();
+                    ex.print(); 
+                    getNumericInput<int>("Press 0 to return to menu: "); // Pause to see
+                    break;
+                case 2: 
+                    clearScreen();
+                    user.printSummary(); 
+                    getNumericInput<int>("Press 0 to return to menu: "); // Pause to see
+                    break;
                 case 3: {
+                    clearScreen();
                     double amt = getNumericInput<double>("Enter amount to deposit: ");
                     user.getWallet().deposit(amt);
-                    std::cout << "[OK] Deposited. New cash: $" << user.getWallet().getCash() << "\n";
+                    std::cout << "[OK] Deposited. New cash: $" << std::fixed << std::setprecision(2) << user.getWallet().getCash() << "\n";
+                    std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                     break;
                 }
+                
                 case 4: {
+                    clearScreen();
                     std::string sym;
                     std::cout << "Enter symbol to BUY (e.g., ETH): ";
                     std::cin >> sym;
                     double units = getNumericInput<double>("Enter units to buy: ");
                     BuyTrade(sym, units).execute(user, ex);
+                    std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                     break;
                 }
                 case 5: {
+                    clearScreen();
                     std::string sym;
                     std::cout << "Enter symbol to SELL (e.g., ETH): ";
                     std::cin >> sym;
                     double units = getNumericInput<double>("Enter units to sell: ");
                     SellTrade(sym, units).execute(user, ex);
+                    std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                     break;
                 }
                 case 6: {
+                    clearScreen();
                     std::string sym;
                     std::cout << "Place a new Limit Order\n";
                     std::cout << "Enter symbol (e.g., BTC): ";
@@ -852,6 +1047,7 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
 
                     if (ex.find(sym) == nullptr) {
                         std::cout << "Error: Symbol '" << sym << "' is not listed on the market.\n";
+                        std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                         continue;
                     }
                     double units = getNumericInput<double>("Enter units: ");
@@ -863,14 +1059,18 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
                     } else {
                         std::cout << "Invalid order type.\n";
                     }
+                    std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                     break;
                 }
                 case 7: {
+                    clearScreen();
                     limitManager.displayUserOrders(user.getName());
+                    getNumericInput<int>("Press 0 to return to menu: "); // Pause to see
                     break;
                 }
                 default:
                     std::cout << "Unknown option.\n";
+                    std::this_thread::sleep_for(std::chrono::seconds(1)); // Pause to see
             }
         } catch (const std::exception& e) {
             std::cerr << "An error occurred in the user menu: " << e.what() << '\n';
@@ -878,6 +1078,8 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
         }
     }
 }
+// --- END MODIFIED FUNCTION ---
+
 
 // --- Main Application ---
 int main() {
@@ -890,6 +1092,13 @@ int main() {
         if (ex.isListingsEmpty()) {
             seedExchange(ex);
         }
+
+        // --- NEW ADDITION ---
+        // At startup, fetch live prices to overwrite any stale data from files
+        std::cout << "Attempting initial price update from API...\n";
+        updateCryptoPricesFromAPI(ex);
+        std::cout << "Initial price update attempt finished.\n";
+        // --- END NEW ADDITION ---
 
         std::cout << "====== Crypto Trading Simulator ======\n";
 
