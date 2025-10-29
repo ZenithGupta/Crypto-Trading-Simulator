@@ -1017,6 +1017,7 @@ void userMenu(User& user, Exchange& ex, AuthManager& auth, LimitOrderManager& li
                     std::this_thread::sleep_for(std::chrono::seconds(2)); // Pause to see
                     break;
                 }
+                
                 case 4: {
                     clearScreen();
                     std::string sym;
