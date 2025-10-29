@@ -1,1 +1,29 @@
+# CSV files (from your original file)
 *.csv
+
+# Downloaded header-only library
+json.hpp
+
+# Vcpkg package manager directory
+vcpkg/
+
+# Compiled executable (optional but recommended)
+*.exe
+crypto_simulator
+
+# Other build artifacts (optional but recommended)
+*.o
+*.obj
+*.dll
+*.so
+*.a
+*.lib
+
+# User-specific files (already ignored by *.csv, but explicit is ok)
+*_wallet.csv
+users.txt
+limit_orders.txt
+order_id.txt
+
+# VS Code specific files (optional)
+.vscode/
